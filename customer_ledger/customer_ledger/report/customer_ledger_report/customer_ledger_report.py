@@ -156,17 +156,11 @@ def _validate_filters(filters):
 def _get_data(filters):
     currency = _get_currency(filters)
 
-    # 1. Fetch the receivable account(s) linked to the customer's party
-    party_account = _get_party_account(filters)
-    if not party_account:
-        frappe.msgprint(_("No receivable account found for this customer."))
-        return []
+    # 1. Opening balance (all entries BEFORE from_date)
+    opening_balance = _get_opening_balance(filters)
 
-    # 2. Opening balance (all entries BEFORE from_date)
-    opening_balance = _get_opening_balance(filters, party_account)
-
-    # 3. Transactions within the date range
-    gl_entries = _get_gl_entries(filters, party_account)
+    # 2. Transactions within the date range
+    gl_entries = _get_gl_entries(filters)
 
     # 4. Build result rows
     data = []
@@ -213,13 +207,7 @@ def _get_data(filters):
     return data
 
 
-def _get_party_account(filters):
-    """Return the receivable account for the customer using ERPNext's own resolver."""
-    from erpnext.accounts.utils import get_party_account
-    return get_party_account("Customer", filters.customer, filters.company)
-
-
-def _get_opening_balance(filters, party_account):
+def _get_opening_balance(filters):
     """Sum of (debit - credit) for all GL entries before from_date."""
     result = frappe.db.sql(
         """
@@ -228,7 +216,6 @@ def _get_opening_balance(filters, party_account):
         FROM `tabGL Entry`
         WHERE
             company = %(company)s
-            AND account = %(account)s
             AND party_type = 'Customer'
             AND party = %(customer)s
             AND posting_date < %(from_date)s
@@ -236,7 +223,6 @@ def _get_opening_balance(filters, party_account):
         """,
         {
             "company": filters.company,
-            "account": party_account,
             "customer": filters.customer,
             "from_date": filters.from_date,
         },
@@ -245,7 +231,7 @@ def _get_opening_balance(filters, party_account):
     return flt(result[0].balance) if result else 0.0
 
 
-def _get_gl_entries(filters, party_account):
+def _get_gl_entries(filters):
     """GL entries within the selected date range."""
     cancelled_condition = "" if filters.get("show_cancelled") else "AND gle.is_cancelled = 0"
 
@@ -261,7 +247,6 @@ def _get_gl_entries(filters, party_account):
         FROM `tabGL Entry` gle
         WHERE
             gle.company = %(company)s
-            AND gle.account = %(account)s
             AND gle.party_type = 'Customer'
             AND gle.party = %(customer)s
             AND gle.posting_date BETWEEN %(from_date)s AND %(to_date)s
@@ -270,7 +255,6 @@ def _get_gl_entries(filters, party_account):
         """.format(cancelled_condition=cancelled_condition),
         {
             "company": filters.company,
-            "account": party_account,
             "customer": filters.customer,
             "from_date": filters.from_date,
             "to_date": filters.to_date,
