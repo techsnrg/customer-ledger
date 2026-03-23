@@ -7,7 +7,7 @@ and closing balance.
 
 import frappe
 from frappe import _
-from frappe.utils import flt, formatdate, getdate, nowdate
+from frappe.utils import cint, flt, formatdate, getdate, nowdate
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +186,7 @@ def _get_data(filters):
 
     running_balance = opening_balance
     current_account = None
-    group_by_account = filters.get("group_by_account", 1)
+    group_by_account = cint(filters.get("group_by_account", 1))
 
     for entry in gl_entries:
         # Insert a bold account-header row whenever the account changes
@@ -267,10 +267,25 @@ def _get_opening_balance(filters):
 
 
 def _get_gl_entries(filters):
-    """GL entries within the selected date range."""
-    cancelled_condition = "" if filters.get("show_cancelled") else "AND gle.is_cancelled = 0"
-    journal_condition = "" if filters.get("include_journal_entries", 1) else "AND gle.voucher_type != 'Journal Entry'"
-    order_by = "gle.account ASC, gle.posting_date ASC, gle.creation ASC" if filters.get("group_by_account", 1) else "gle.posting_date ASC, gle.creation ASC"
+    """
+    GL entries within the selected date range, one row per voucher per account.
+    Multiple GL lines for the same voucher (e.g. payment split across invoices)
+    are collapsed via GROUP BY so the ledger stays clean.
+    """
+    # Use cint() so Frappe's "0"/"1" strings are treated correctly
+    show_cancelled        = cint(filters.get("show_cancelled", 0))
+    include_je            = cint(filters.get("include_journal_entries", 1))
+    group_by_account      = cint(filters.get("group_by_account", 1))
+
+    cancelled_condition   = "" if show_cancelled   else "AND gle.is_cancelled = 0"
+    journal_condition     = "" if include_je        else "AND gle.voucher_type != 'Journal Entry'"
+
+    # When grouping by account sort account-first so the header rows appear correctly
+    order_by = (
+        "gle.account ASC, gle.posting_date ASC, gle.voucher_no ASC"
+        if group_by_account
+        else "gle.posting_date ASC, gle.voucher_no ASC"
+    )
 
     return frappe.db.sql(
         """
@@ -279,17 +294,22 @@ def _get_gl_entries(filters):
             gle.account,
             gle.voucher_type,
             gle.voucher_no,
-            gle.remarks,
-            gle.debit_in_account_currency  AS debit,
-            gle.credit_in_account_currency AS credit
+            MAX(gle.remarks)                        AS remarks,
+            SUM(gle.debit_in_account_currency)      AS debit,
+            SUM(gle.credit_in_account_currency)     AS credit
         FROM `tabGL Entry` gle
         WHERE
-            gle.company = %(company)s
+            gle.company    = %(company)s
             AND gle.party_type = 'Customer'
-            AND gle.party = %(customer)s
+            AND gle.party      = %(customer)s
             AND gle.posting_date BETWEEN %(from_date)s AND %(to_date)s
             {cancelled_condition}
             {journal_condition}
+        GROUP BY
+            gle.posting_date,
+            gle.account,
+            gle.voucher_type,
+            gle.voucher_no
         ORDER BY {order_by}
         """.format(
             cancelled_condition=cancelled_condition,
@@ -297,10 +317,10 @@ def _get_gl_entries(filters):
             order_by=order_by,
         ),
         {
-            "company": filters.company,
-            "customer": filters.customer,
+            "company":   filters.company,
+            "customer":  filters.customer,
             "from_date": filters.from_date,
-            "to_date": filters.to_date,
+            "to_date":   filters.to_date,
         },
         as_dict=True,
     )
