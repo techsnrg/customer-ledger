@@ -133,10 +133,12 @@ def execute(filters=None):
     columns = get_columns(filters)
     data = _get_data(filters)
 
-    # Build the custom HTML header (shown when printing / PDF)
-    report_summary = _get_report_summary(filters, data)
+    # 3rd return value: HTML rendered above the data table in the browser
+    html_header = _build_report_header(filters, data)
+    # 5th return value: list of summary cards shown below the table
+    summary_cards = _build_summary_cards(filters, data)
 
-    return columns, data, None, None, report_summary
+    return columns, data, html_header, None, summary_cards
 
 
 # ---------------------------------------------------------------------------
@@ -278,42 +280,54 @@ def _make_opening_row(opening_balance, currency, from_date):
 
 
 # ---------------------------------------------------------------------------
-# Report summary (used by ERPNext's print/PDF template)
+# Report header and summary cards
 # ---------------------------------------------------------------------------
 
-def _get_report_summary(filters, data):
+def _build_report_header(filters, data):
     """
-    Returns a dict with extra context used by the Jinja print template.
-    Also builds the HTML header block for the report.
+    Returns an HTML string displayed above the data table in the browser.
+    Frappe renders the 3rd execute() return value as raw HTML.
     """
     company_doc = frappe.get_doc("Company", filters.company)
     customer_doc = frappe.get_doc("Customer", filters.customer)
-
-    # Try to get customer's primary address
     customer_address = _get_customer_address(filters.customer)
-
     closing_balance = flt(data[-1].get("balance", 0)) if data else 0.0
     currency = _get_currency(filters)
+    return _build_html_header(
+        company_doc, customer_doc, customer_address, filters, closing_balance, currency
+    )
 
-    return {
-        "company_name": company_doc.company_name,
-        "company_address": _get_company_address(filters.company),
-        "company_phone": company_doc.get("phone_no") or "",
-        "company_email": company_doc.get("email") or "",
-        "company_tax_id": company_doc.get("tax_id") or "",
-        "company_logo": company_doc.get("company_logo") or "",
-        "customer_name": customer_doc.customer_name,
-        "customer_code": customer_doc.name,
-        "customer_address": customer_address,
-        "customer_tax_id": customer_doc.get("tax_id") or "",
-        "from_date": formatdate(filters.from_date),
-        "to_date": formatdate(filters.to_date),
-        "currency": currency,
-        "closing_balance": closing_balance,
-        "report_html_header": _build_html_header(
-            company_doc, customer_doc, customer_address, filters, closing_balance, currency
-        ),
-    }
+
+def _build_summary_cards(filters, data):
+    """
+    Returns a list of summary card dicts — the format Frappe expects for
+    the 5th execute() return value.
+    """
+    closing_balance = flt(data[-1].get("balance", 0)) if data else 0.0
+    currency = _get_currency(filters)
+    total_debit = sum(flt(r.get("debit", 0)) for r in data[1:-1])
+    total_credit = sum(flt(r.get("credit", 0)) for r in data[1:-1])
+    return [
+        {
+            "value": total_debit,
+            "label": _("Total Invoiced"),
+            "datatype": "Currency",
+            "currency": currency,
+        },
+        {
+            "value": total_credit,
+            "label": _("Total Received"),
+            "datatype": "Currency",
+            "currency": currency,
+        },
+        {
+            "value": abs(closing_balance),
+            "label": _("Balance Due") if closing_balance >= 0 else _("Credit Balance"),
+            "datatype": "Currency",
+            "currency": currency,
+            "indicator": "Red" if closing_balance > 0 else "Green",
+        },
+    ]
 
 
 def _get_company_address(company):
