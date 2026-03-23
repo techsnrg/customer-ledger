@@ -45,26 +45,37 @@ frappe.query_reports["Customer Ledger Report"] = {
 			label: __("Include Cancelled Entries"),
 			fieldtype: "Check",
 			default: 0,
-			on_change: () => frappe.query_report.refresh(),
 		},
 		{
 			fieldname: "group_by_account",
 			label: __("Group by Account"),
 			fieldtype: "Check",
 			default: 1,
-			on_change: () => frappe.query_report.refresh(),
 		},
 		{
 			fieldname: "include_journal_entries",
 			label: __("Include Journal Entries"),
 			fieldtype: "Check",
 			default: 1,
-			on_change: () => frappe.query_report.refresh(),
 		},
 	],
 
-	// Inject the HTML header above the data table when the report renders
 	onload: function (report) {
+		// Frappe's query-report does not auto-refresh when a Check filter is
+		// toggled.  Wire up jQuery change handlers directly on the checkbox
+		// inputs so every toggle immediately re-runs the report.
+		// A short delay is needed because the filter DOM is built after onload.
+		setTimeout(function () {
+			["show_cancelled", "group_by_account", "include_journal_entries"].forEach(function (fn) {
+				var f = report.get_filter(fn);
+				if (f && f.$input) {
+					f.$input.off("change.cl_report").on("change.cl_report", function () {
+						report.refresh();
+					});
+				}
+			});
+		}, 500);
+
 		report.page.add_inner_button(__("Print Ledger"), function () {
 			var filters = report.get_values();
 			if (!filters) return;
