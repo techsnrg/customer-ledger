@@ -184,7 +184,7 @@ def _get_data(filters):
                 "posting_date": entry.posting_date,
                 "voucher_type": entry.voucher_type,
                 "voucher_no": entry.voucher_no,
-                "remarks": entry.remarks or entry.narration or "",
+                "remarks": entry.remarks or "",
                 "debit": flt(entry.debit),
                 "credit": flt(entry.credit),
                 "balance": running_balance,
@@ -265,7 +265,6 @@ def _get_gl_entries(filters, party_account):
             gle.voucher_type,
             gle.voucher_no,
             gle.remarks,
-            gle.narration,
             gle.debit_in_account_currency  AS debit,
             gle.credit_in_account_currency AS credit
         FROM `tabGL Entry` gle
