@@ -5,12 +5,5 @@ app_description = "Custom Customer Ledger Report for ERPNext"
 app_email = "info@yourcompany.com"
 app_license = "MIT"
 
-# Apps to be loaded before this app
-# required_apps = ["erpnext"]
-
-fixtures = [
-    {
-        "doctype": "Report",
-        "filters": [["name", "in", ["Customer Ledger Report"]]],
-    }
-]
+after_install = "customer_ledger.setup.after_install"
+after_migrate = "customer_ledger.setup.after_migrate"
