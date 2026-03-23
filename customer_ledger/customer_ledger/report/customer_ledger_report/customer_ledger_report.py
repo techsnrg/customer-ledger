@@ -214,18 +214,9 @@ def _get_data(filters):
 
 
 def _get_party_account(filters):
-    """Return the default receivable account for the customer's company."""
-    account = frappe.db.get_value(
-        "Party Account",
-        {"parenttype": "Customer", "parent": filters.customer, "company": filters.company},
-        "account",
-    )
-    if not account:
-        # Fall back to the company's default receivable account
-        account = frappe.db.get_value(
-            "Company", filters.company, "default_receivable_account"
-        )
-    return account
+    """Return the receivable account for the customer using ERPNext's own resolver."""
+    from erpnext.accounts.utils import get_party_account
+    return get_party_account("Customer", filters.customer, filters.company)
 
 
 def _get_opening_balance(filters, party_account):
