@@ -5,9 +5,7 @@ description = "Custom Customer Ledger Report for ERPNext"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-dependencies = [
-    "frappe",
-]
+dependencies = []
 
 [build-system]
 requires = ["flit_core >=3.4,<4"]
