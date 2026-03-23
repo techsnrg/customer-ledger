@@ -184,9 +184,9 @@ def _get_data(filters):
         _make_opening_row(opening_balance, currency, filters.from_date)
     )
 
-    running_balance = opening_balance
-    current_account = None
-    group_by_account = cint(filters.get("group_by_account", 1))
+    running_balance  = opening_balance
+    current_account  = None
+    group_by_account = cint(filters["group_by_account"]) if "group_by_account" in filters else 1
 
     for entry in gl_entries:
         # Insert a bold account-header row whenever the account changes
@@ -272,13 +272,16 @@ def _get_gl_entries(filters):
     Multiple GL lines for the same voucher (e.g. payment split across invoices)
     are collapsed via GROUP BY so the ledger stays clean.
     """
-    # Use cint() so Frappe's "0"/"1" strings are treated correctly
-    show_cancelled        = cint(filters.get("show_cancelled", 0))
-    include_je            = cint(filters.get("include_journal_entries", 1))
-    group_by_account      = cint(filters.get("group_by_account", 1))
+    # cint() handles both integer 0/1 and string "0"/"1" from Frappe.
+    # "in filters" check is needed because Frappe sometimes omits a key
+    # entirely when its value is 0 (falsy), so we must distinguish
+    # "not sent → use default" from "sent as 0 → user turned it off".
+    show_cancelled   = cint(filters.get("show_cancelled",         0))
+    include_je       = cint(filters["include_journal_entries"])       if "include_journal_entries"  in filters else 1
+    group_by_account = cint(filters["group_by_account"])              if "group_by_account"         in filters else 1
 
-    cancelled_condition   = "" if show_cancelled   else "AND gle.is_cancelled = 0"
-    journal_condition     = "" if include_je        else "AND gle.voucher_type != 'Journal Entry'"
+    cancelled_condition = "" if show_cancelled else "AND gle.is_cancelled = 0"
+    journal_condition   = "" if include_je     else "AND gle.voucher_type != 'Journal Entry'"
 
     # When grouping by account sort account-first so the header rows appear correctly
     order_by = (

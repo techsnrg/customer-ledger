@@ -45,18 +45,21 @@ frappe.query_reports["Customer Ledger Report"] = {
 			label: __("Include Cancelled Entries"),
 			fieldtype: "Check",
 			default: 0,
+			on_change: () => frappe.query_report.refresh(),
 		},
 		{
 			fieldname: "group_by_account",
 			label: __("Group by Account"),
 			fieldtype: "Check",
 			default: 1,
+			on_change: () => frappe.query_report.refresh(),
 		},
 		{
 			fieldname: "include_journal_entries",
 			label: __("Include Journal Entries"),
 			fieldtype: "Check",
 			default: 1,
+			on_change: () => frappe.query_report.refresh(),
 		},
 	],
 
