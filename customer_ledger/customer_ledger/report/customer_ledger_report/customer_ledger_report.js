@@ -46,6 +46,18 @@ frappe.query_reports["Customer Ledger Report"] = {
 			fieldtype: "Check",
 			default: 0,
 		},
+		{
+			fieldname: "group_by_account",
+			label: __("Group by Account"),
+			fieldtype: "Check",
+			default: 1,
+		},
+		{
+			fieldname: "include_journal_entries",
+			label: __("Include Journal Entries"),
+			fieldtype: "Check",
+			default: 1,
+		},
 	],
 
 	// Inject the HTML header above the data table when the report renders
@@ -80,9 +92,13 @@ frappe.query_reports["Customer Ledger Report"] = {
 		});
 	},
 
-	// Render the HTML header above the report table
 	formatter: function (value, row, column, data, default_formatter) {
 		value = default_formatter(value, row, column, data);
+
+		// Account group header rows — bold, no colour formatting
+		if (data && data.is_group) {
+			return `<strong>${value}</strong>`;
+		}
 
 		// Highlight Opening / Closing balance rows
 		if (
@@ -101,7 +117,7 @@ frappe.query_reports["Customer Ledger Report"] = {
 		}
 
 		// Color balance: positive = red (owes us), negative = green (credit balance)
-		if (column.fieldname === "balance" && data) {
+		if (column.fieldname === "balance" && data && data.balance !== null) {
 			const color = data.balance >= 0 ? "#c0392b" : "#27ae60";
 			value = `<span style="color:${color}; font-weight:600;">${value}</span>`;
 		}

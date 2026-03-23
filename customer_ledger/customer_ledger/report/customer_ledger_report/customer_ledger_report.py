@@ -57,6 +57,18 @@ def get_filters():
             "fieldtype": "Check",
             "default": 0,
         },
+        {
+            "fieldname": "group_by_account",
+            "label": _("Group by Account"),
+            "fieldtype": "Check",
+            "default": 1,
+        },
+        {
+            "fieldname": "include_journal_entries",
+            "label": _("Include Journal Entries"),
+            "fieldtype": "Check",
+            "default": 1,
+        },
     ]
 
 
@@ -173,7 +185,28 @@ def _get_data(filters):
     )
 
     running_balance = opening_balance
+    current_account = None
+    group_by_account = filters.get("group_by_account", 1)
+
     for entry in gl_entries:
+        # Insert a bold account-header row whenever the account changes
+        if group_by_account and entry.account != current_account:
+            current_account = entry.account
+            data.append(
+                {
+                    "posting_date": None,
+                    "voucher_type": "",
+                    "voucher_no": "",
+                    "remarks": current_account,
+                    "debit": None,
+                    "credit": None,
+                    "balance": None,
+                    "currency": currency,
+                    "bold": 1,
+                    "is_group": 1,
+                }
+            )
+
         running_balance += flt(entry.debit) - flt(entry.credit)
         data.append(
             {
@@ -185,7 +218,7 @@ def _get_data(filters):
                 "credit": flt(entry.credit),
                 "balance": running_balance,
                 "currency": currency,
-                "indent": 0,
+                "indent": 1 if group_by_account else 0,
             }
         )
 
@@ -236,11 +269,14 @@ def _get_opening_balance(filters):
 def _get_gl_entries(filters):
     """GL entries within the selected date range."""
     cancelled_condition = "" if filters.get("show_cancelled") else "AND gle.is_cancelled = 0"
+    journal_condition = "" if filters.get("include_journal_entries", 1) else "AND gle.voucher_type != 'Journal Entry'"
+    order_by = "gle.account ASC, gle.posting_date ASC, gle.creation ASC" if filters.get("group_by_account", 1) else "gle.posting_date ASC, gle.creation ASC"
 
     return frappe.db.sql(
         """
         SELECT
             gle.posting_date,
+            gle.account,
             gle.voucher_type,
             gle.voucher_no,
             gle.remarks,
@@ -253,8 +289,13 @@ def _get_gl_entries(filters):
             AND gle.party = %(customer)s
             AND gle.posting_date BETWEEN %(from_date)s AND %(to_date)s
             {cancelled_condition}
-        ORDER BY gle.posting_date ASC, gle.creation ASC
-        """.format(cancelled_condition=cancelled_condition),
+            {journal_condition}
+        ORDER BY {order_by}
+        """.format(
+            cancelled_condition=cancelled_condition,
+            journal_condition=journal_condition,
+            order_by=order_by,
+        ),
         {
             "company": filters.company,
             "customer": filters.customer,
