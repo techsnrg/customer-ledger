@@ -61,10 +61,10 @@ frappe.query_reports["Customer Ledger Report"] = {
 	],
 
 	onload: function (report) {
-		// Frappe's query-report does not auto-refresh when a Check filter is
-		// toggled.  Wire up jQuery change handlers directly on the checkbox
-		// inputs so every toggle immediately re-runs the report.
-		// A short delay is needed because the filter DOM is built after onload.
+		// Wire Check filters to trigger a report re-run on toggle.
+		// Frappe's query-report does NOT auto-refresh for Check fields, and
+		// get_filter_values() drops falsy (0) values so Python must default
+		// to 0 — the JS default:1 ensures the first run always sends 1.
 		setTimeout(function () {
 			["show_cancelled", "group_by_account", "include_journal_entries"].forEach(function (fn) {
 				var f = report.get_filter(fn);
@@ -76,33 +76,19 @@ frappe.query_reports["Customer Ledger Report"] = {
 			});
 		}, 500);
 
-		report.page.add_inner_button(__("Print Ledger"), function () {
-			var filters = report.get_values();
-			if (!filters) return;
-
-			frappe.call({
-				method: "frappe.client.get_list",
-				args: {
-					doctype: "Print Format",
-					filters: { doc_type: "Report", name: "Customer Ledger Statement" },
-					fields: ["name"],
-					limit: 1,
-				},
-				callback: function () {
-					// Open print dialog using the built-in report print
-					var url = frappe.urllib.get_full_url(
-						"/api/method/frappe.utils.print_format.download_pdf?" +
-							$.param({
-								doctype: "Report",
-								name: "Customer Ledger Report",
-								format: "Standard",
-								no_letterhead: 0,
-								filters: JSON.stringify(filters),
-							})
-					);
-					window.open(url);
-				},
-			});
+		// Export Ledger — downloads a clean PDF matching the vendor statement format
+		report.page.add_inner_button(__("Export Ledger"), function () {
+			var filters = report.get_filter_values();
+			if (!filters || !filters.customer) {
+				frappe.msgprint(__("Please select a Customer before exporting."));
+				return;
+			}
+			var url = frappe.urllib.get_full_url(
+				"/api/method/customer_ledger.customer_ledger.report" +
+				".customer_ledger_report.customer_ledger_report.download_customer_ledger_pdf?" +
+				$.param({ filters: JSON.stringify(filters) })
+			);
+			window.open(url);
 		});
 	},
 
