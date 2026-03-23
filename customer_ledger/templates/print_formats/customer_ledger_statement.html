@@ -1,0 +1,269 @@
+{% set summary = report_summary or {} %}
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    color: #2c3e50;
+    padding: 24px 30px;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────────────── */
+  .header-wrap {
+    border-bottom: 3px solid #2c3e50;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+  }
+
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 14px;
+  }
+
+  .company-block .company-logo {
+    max-height: 65px;
+    max-width: 180px;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .company-block .company-name {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 3px;
+  }
+  .company-block .company-meta {
+    font-size: 10.5px;
+    color: #555;
+    line-height: 1.6;
+  }
+
+  .report-title-block {
+    text-align: right;
+  }
+  .report-title-block .report-title {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    margin-bottom: 5px;
+  }
+  .report-title-block .date-range {
+    font-size: 11px;
+    color: #666;
+    margin-bottom: 10px;
+  }
+  .balance-badge {
+    display: inline-block;
+    padding: 6px 18px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.3px;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid #dce1e7;
+    margin: 12px 0;
+  }
+
+  /* Customer block */
+  .customer-block {
+    background: #f4f6f8;
+    border-left: 4px solid #2c3e50;
+    padding: 10px 14px;
+    border-radius: 0 4px 4px 0;
+    display: inline-block;
+    min-width: 260px;
+    max-width: 50%;
+  }
+  .customer-block .label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 5px;
+  }
+  .customer-block .cust-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 3px;
+  }
+  .customer-block .cust-meta {
+    font-size: 10.5px;
+    color: #666;
+    line-height: 1.5;
+  }
+
+  /* ── TABLE ───────────────────────────────────────────────────── */
+  .ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 18px;
+    font-size: 11.5px;
+  }
+  .ledger-table thead tr {
+    background: #2c3e50;
+    color: #fff;
+  }
+  .ledger-table thead th {
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .ledger-table thead th.num { text-align: right; }
+
+  .ledger-table tbody tr:nth-child(even) { background: #f8f9fa; }
+  .ledger-table tbody tr:hover          { background: #eef2f7; }
+
+  .ledger-table tbody td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #ecf0f1;
+    vertical-align: top;
+  }
+  .ledger-table tbody td.num { text-align: right; white-space: nowrap; }
+
+  /* Special rows */
+  .row-opening, .row-closing {
+    background: #eaf0fb !important;
+    font-weight: 700;
+  }
+  .row-closing {
+    border-top: 2px solid #2c3e50;
+  }
+
+  /* Color helpers */
+  .debit  { color: #c0392b; }
+  .credit { color: #27ae60; }
+  .bal-dr { color: #c0392b; font-weight: 600; }
+  .bal-cr { color: #27ae60; font-weight: 600; }
+
+  /* ── FOOTER ──────────────────────────────────────────────────── */
+  .footer {
+    margin-top: 28px;
+    font-size: 10px;
+    color: #aaa;
+    text-align: center;
+    border-top: 1px solid #ecf0f1;
+    padding-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ HEADER ══ -->
+<div class="header-wrap">
+
+  <div class="header-top">
+
+    <!-- Left: Company -->
+    <div class="company-block">
+      {% if summary.company_logo %}
+        <img class="company-logo" src="{{ summary.company_logo }}" alt="logo">
+      {% endif %}
+      <div class="company-name">{{ summary.company_name }}</div>
+      <div class="company-meta">
+        {% if summary.company_address %}{{ summary.company_address }}<br>{% endif %}
+        {% if summary.company_phone %}Phone: {{ summary.company_phone }}<br>{% endif %}
+        {% if summary.company_email %}Email: {{ summary.company_email }}<br>{% endif %}
+        {% if summary.company_tax_id %}Tax ID: {{ summary.company_tax_id }}{% endif %}
+      </div>
+    </div>
+
+    <!-- Right: Report title + balance -->
+    <div class="report-title-block">
+      <div class="report-title">Customer Ledger Statement</div>
+      <div class="date-range">
+        <strong>Period:</strong> {{ summary.from_date }} &mdash; {{ summary.to_date }}
+      </div>
+      {% set bal = summary.closing_balance | float %}
+      {% if bal >= 0 %}
+        <span class="balance-badge" style="background:#c0392b;">
+          Balance Due: {{ summary.currency }} {{ '{:,.2f}'.format(bal | abs) }}
+        </span>
+      {% else %}
+        <span class="balance-badge" style="background:#27ae60;">
+          Credit Balance: {{ summary.currency }} {{ '{:,.2f}'.format(bal | abs) }}
+        </span>
+      {% endif %}
+    </div>
+
+  </div><!-- /.header-top -->
+
+  <hr class="divider">
+
+  <!-- Customer block -->
+  <div class="customer-block">
+    <div class="label">Bill To</div>
+    <div class="cust-name">{{ summary.customer_name }}</div>
+    <div class="cust-meta">
+      <span style="color:#888;">Customer Code:</span> {{ summary.customer_code }}<br>
+      {% if summary.customer_address %}{{ summary.customer_address }}<br>{% endif %}
+      {% if summary.customer_tax_id %}Tax ID: {{ summary.customer_tax_id }}{% endif %}
+    </div>
+  </div>
+
+</div><!-- /.header-wrap -->
+
+
+<!-- ═══════════════════════════════════════════════════════ TABLE ══ -->
+<table class="ledger-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Voucher Type</th>
+      <th>Voucher No</th>
+      <th>Remarks</th>
+      <th class="num">Debit ({{ summary.currency }})</th>
+      <th class="num">Credit ({{ summary.currency }})</th>
+      <th class="num">Balance ({{ summary.currency }})</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in data %}
+      {% set is_opening = row.remarks == "Opening Balance" %}
+      {% set is_closing = row.remarks == "Closing Balance" %}
+      <tr class="
+        {% if is_opening %}row-opening
+        {% elif is_closing %}row-closing
+        {% endif %}
+      ">
+        <td>{{ row.posting_date or '' }}</td>
+        <td>{{ row.voucher_type or '' }}</td>
+        <td>{{ row.voucher_no or '' }}</td>
+        <td>{{ row.remarks or '' }}</td>
+        <td class="num {% if row.debit %}debit{% endif %}">
+          {% if row.debit %}{{ '{:,.2f}'.format(row.debit | float) }}{% endif %}
+        </td>
+        <td class="num {% if row.credit %}credit{% endif %}">
+          {% if row.credit %}{{ '{:,.2f}'.format(row.credit | float) }}{% endif %}
+        </td>
+        <td class="num {% if row.balance >= 0 %}bal-dr{% else %}bal-cr{% endif %}">
+          {{ '{:,.2f}'.format(row.balance | float | abs) }}
+          {{ 'Dr' if row.balance >= 0 else 'Cr' }}
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════ FOOTER ══ -->
+<div class="footer">
+  Generated on {{ frappe.utils.nowdate() }} &nbsp;|&nbsp;
+  {{ summary.company_name }} &nbsp;|&nbsp;
+  This is a computer generated statement and does not require a signature.
+</div>
+
+</body>
+</html>
