@@ -186,7 +186,7 @@ def _get_data(filters):
 
     running_balance  = opening_balance
     current_account  = None
-    group_by_account = cint(filters["group_by_account"]) if "group_by_account" in filters else 1
+    group_by_account = cint(filters.get("group_by_account", 0))
 
     for entry in gl_entries:
         # Insert a bold account-header row whenever the account changes
@@ -277,8 +277,8 @@ def _get_gl_entries(filters):
     # entirely when its value is 0 (falsy), so we must distinguish
     # "not sent → use default" from "sent as 0 → user turned it off".
     show_cancelled   = cint(filters.get("show_cancelled",         0))
-    include_je       = cint(filters["include_journal_entries"])       if "include_journal_entries"  in filters else 1
-    group_by_account = cint(filters["group_by_account"])              if "group_by_account"         in filters else 1
+    include_je       = cint(filters.get("include_journal_entries", 0))
+    group_by_account = cint(filters.get("group_by_account",        0))
 
     cancelled_condition = "" if show_cancelled else "AND gle.is_cancelled = 0"
     journal_condition   = "" if include_je     else "AND gle.voucher_type != 'Journal Entry'"
