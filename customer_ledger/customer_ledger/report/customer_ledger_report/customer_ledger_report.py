@@ -358,27 +358,6 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         if logo_src else ""
     )
 
-    # ── Customer GSTIN (tax_id on Customer doc, or gstin on their primary Address)
-    cust_gstin = customer_doc.get("tax_id") or ""
-    if not cust_gstin:
-        row = frappe.db.sql(
-            """
-            SELECT a.gstin
-            FROM `tabAddress` a
-            JOIN `tabDynamic Link` dl ON dl.parent = a.name
-              AND dl.link_doctype = 'Customer' AND dl.link_name = %(customer)s
-            WHERE a.gstin IS NOT NULL AND a.gstin != ''
-            ORDER BY a.is_primary_address DESC
-            LIMIT 1
-            """,
-            {"customer": filters.customer},
-            as_dict=True,
-        )
-        cust_gstin = row[0].gstin if row else ""
-
-    # ── Company GSTIN
-    co_gstin = company_doc.get("tax_id") or ""
-
     def _meta_line(val):
         """Return a <div> line or empty string."""
         return "<div>{}</div>".format(val) if val else ""
@@ -434,7 +413,6 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         <div class="co-name">{company_name}</div>
         <div class="co-meta">
           {co_addr}
-          {co_gstin}
           {co_phone}
           {co_email}
         </div>
@@ -470,7 +448,6 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         <div class="cust-meta">
           {cust_code_line}
           {cust_addr}
-          {cust_gstin}
         </div>
       </td>
     </tr>
@@ -509,7 +486,6 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         logo=logo_html,
         company_name=company_doc.company_name,
         co_addr=_meta_line(company_addr),
-        co_gstin=_meta_line("GSTIN: {}".format(co_gstin) if co_gstin else ""),
         co_phone=_meta_line(company_doc.get("phone_no", "")),
         co_email=_meta_line(company_doc.get("email", "")),
         from_date=formatdate(filters.from_date),
@@ -518,7 +494,6 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         cust_code_line=_meta_line("Code: {}".format(customer_doc.name)
                                    if customer_doc.name != customer_doc.customer_name else ""),
         cust_addr=_meta_line(customer_addr),
-        cust_gstin=_meta_line("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
         open_bal=_fmt(opening_balance, currency),
         inv_amt=_fmt(total_inv, currency),
         rec_amt=_fmt(total_rec, currency),
@@ -534,7 +509,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         ar_page    = _build_ar_page(
             ar_entries, aging, filters, currency,
             logo_html, company_doc, customer_doc,
-            company_addr, customer_addr, cust_gstin, co_gstin,
+            company_addr, customer_addr,
             _meta_line,
         )
         html = html.replace("</div>\n</body>", "</div>\n" + ar_page + "\n</body>")
@@ -670,7 +645,7 @@ def _build_ar_aging(ar_entries):
 
 def _build_ar_page(ar_entries, aging, filters, currency,
                    logo_html, company_doc, customer_doc,
-                   company_addr, customer_addr, cust_gstin, co_gstin,
+                   company_addr, customer_addr,
                    meta_line_fn):
     """Return the full HTML string for the AR page (page 2 of the PDF)."""
 
@@ -799,7 +774,6 @@ def _build_ar_page(ar_entries, aging, filters, currency,
         <div class="co-name">{company_name}</div>
         <div class="co-meta">
           {co_addr}
-          {co_gstin}
           {co_phone}
           {co_email}
         </div>
@@ -823,7 +797,6 @@ def _build_ar_page(ar_entries, aging, filters, currency,
         <div class="cust-meta">
           {cust_code_line}
           {cust_addr}
-          {cust_gstin}
         </div>
       </td>
     </tr>
@@ -859,7 +832,6 @@ def _build_ar_page(ar_entries, aging, filters, currency,
         logo=logo_html,
         company_name=company_doc.company_name,
         co_addr=meta_line_fn(company_addr),
-        co_gstin=meta_line_fn("GSTIN: {}".format(co_gstin) if co_gstin else ""),
         co_phone=meta_line_fn(company_doc.get("phone_no", "")),
         co_email=meta_line_fn(company_doc.get("email", "")),
         to_date=formatdate(filters.to_date),
@@ -869,7 +841,6 @@ def _build_ar_page(ar_entries, aging, filters, currency,
             if customer_doc.name != customer_doc.customer_name else ""
         ),
         cust_addr=meta_line_fn(customer_addr),
-        cust_gstin=meta_line_fn("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
         ar_rows=ar_rows_html,
         aging_section=aging_html,
         tnc_section=tnc_html,
