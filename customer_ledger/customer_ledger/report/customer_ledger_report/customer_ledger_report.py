@@ -19,9 +19,10 @@ def get_columns(filters):
     currency = _get_currency(filters)
     return [
         {"fieldname": "posting_date", "label": _("Date"),        "fieldtype": "Date",         "width": 100},
-        {"fieldname": "voucher_type", "label": _("Type"),        "fieldtype": "Data",         "width": 130},
-        {"fieldname": "voucher_no",   "label": _("Voucher No"),  "fieldtype": "Dynamic Link",
-         "options": "voucher_type",                                                             "width": 160},
+        {"fieldname": "voucher_type",    "label": _("Type"),           "fieldtype": "Data",         "width": 130},
+        {"fieldname": "voucher_subtype", "label": _("Subtype"),        "fieldtype": "Data",         "width": 110},
+        {"fieldname": "voucher_no",      "label": _("Voucher No"),     "fieldtype": "Dynamic Link",
+         "options": "voucher_type",                                                                  "width": 160},
         {"fieldname": "remarks",      "label": _("Remarks"),     "fieldtype": "Data",         "width": 220},
         {"fieldname": "debit",        "label": _("Amount ({0})".format(currency)),
          "fieldtype": "Currency", "options": "currency",                                       "width": 130},
@@ -84,15 +85,16 @@ def _get_data(filters):
 
         running_balance += flt(entry.debit) - flt(entry.credit)
         data.append({
-            "posting_date": entry.posting_date,
-            "voucher_type": entry.voucher_type,
-            "voucher_no":   entry.voucher_no,
-            "remarks":      entry.remarks or "",
-            "debit":        flt(entry.debit),
-            "credit":       flt(entry.credit),
-            "balance":      running_balance,
-            "currency":     currency,
-            "indent":       1 if group_by_account else 0,
+            "posting_date":    entry.posting_date,
+            "voucher_type":    entry.voucher_type,
+            "voucher_subtype": entry.voucher_subtype or "",
+            "voucher_no":      entry.voucher_no,
+            "remarks":         entry.remarks or "",
+            "debit":           flt(entry.debit),
+            "credit":          flt(entry.credit),
+            "balance":         running_balance,
+            "currency":        currency,
+            "indent":          1 if group_by_account else 0,
         })
 
     total_debit  = sum(flt(r.get("debit",  0)) for r in data[1:])
@@ -139,7 +141,9 @@ def _get_gl_entries(filters):
     return frappe.db.sql(
         """
         SELECT
-            gle.posting_date, gle.account, gle.voucher_type, gle.voucher_no,
+            gle.posting_date, gle.account, gle.voucher_type,
+            MAX(gle.voucher_subtype)           AS voucher_subtype,
+            gle.voucher_no,
             MAX(gle.remarks)                   AS remarks,
             SUM(gle.debit_in_account_currency) AS debit,
             SUM(gle.credit_in_account_currency)AS credit
@@ -325,7 +329,11 @@ def download_customer_ledger_pdf(filters):
         rows_html += _pdf_row(
             formatdate(e.posting_date),
             e.voucher_type,
-            "{}<br><small style='color:#666'>{}</small>".format(e.voucher_no, e.remarks or ""),
+            "{}{}<br><small style='color:#666'>{}</small>".format(
+                e.voucher_no,
+                " <em>({})</em>".format(e.voucher_subtype) if e.voucher_subtype else "",
+                e.remarks or "",
+            ),
             _fmt(debit,  currency) if debit  else "",
             _fmt(credit, currency) if credit else "",
             _fmt(running, currency),
