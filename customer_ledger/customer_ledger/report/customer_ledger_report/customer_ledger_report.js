@@ -24,7 +24,13 @@ frappe.query_reports["Customer Ledger Report"] = {
 			fieldname: "from_date",
 			label: __("From Date"),
 			fieldtype: "Date",
-			default: frappe.datetime.get_today(),
+			// Default to 1 Apr of the current Indian financial year
+			// (FY runs Apr 1 – Mar 31, so if today is Jan-Mar use previous year)
+			default: (function () {
+				var t = frappe.datetime.get_today().split("-");
+				var y = parseInt(t[0]), m = parseInt(t[1]);
+				return (m <= 3 ? y - 1 : y) + "-04-01";
+			})(),
 			reqd: 1,
 		},
 		{
