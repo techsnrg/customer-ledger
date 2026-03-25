@@ -89,7 +89,7 @@ def _get_data(filters):
             "voucher_type":    entry.voucher_type,
             "voucher_subtype": entry.voucher_subtype or "",
             "voucher_no":      entry.voucher_no,
-            "remarks":         entry.remarks or "",
+            "remarks":         "" if (entry.remarks or "").strip().lower() in ("no remarks", "") else entry.remarks,
             "debit":           flt(entry.debit),
             "credit":          flt(entry.credit),
             "balance":         running_balance,
@@ -289,13 +289,14 @@ def _build_summary_cards(filters, data):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def download_customer_ledger_pdf(filters):
+def download_customer_ledger_pdf(filters, include_ar=0):
     from frappe.utils.pdf import get_pdf
 
     if isinstance(filters, str):
         filters = frappe._dict(json.loads(filters))
     else:
         filters = frappe._dict(filters or {})
+    include_ar = cint(include_ar)
 
     _validate_filters(filters)
 
@@ -313,10 +314,14 @@ def download_customer_ledger_pdf(filters):
     total_rec = 0.0
     rows_html = ""
 
+    def _fdate(d):
+        """Format date as '04 Sep 2025' — never wraps in the narrow Date column."""
+        return formatdate(d, "dd MMM yyyy") if d else ""
+
     rows_html += _pdf_row(
-        formatdate(filters.from_date), "Opening Balance", "",
-        _fmt(opening_balance if opening_balance > 0 else 0, currency),
-        _fmt(abs(opening_balance) if opening_balance < 0 else 0, currency),
+        _fdate(filters.from_date), "Opening Balance", "",
+        _fmt(opening_balance, currency) if opening_balance > 0 else "",
+        _fmt(abs(opening_balance), currency) if opening_balance < 0 else "",
         _fmt(opening_balance, currency), bold=True,
     )
 
@@ -327,12 +332,12 @@ def download_customer_ledger_pdf(filters):
         total_inv += debit
         total_rec += credit
         rows_html += _pdf_row(
-            formatdate(e.posting_date),
+            _fdate(e.posting_date),
             e.voucher_type,
             "{}{}<br><small style='color:#666'>{}</small>".format(
                 e.voucher_no,
                 " <em>({})</em>".format(e.voucher_subtype) if e.voucher_subtype else "",
-                e.remarks or "",
+                "" if (e.remarks or "").strip().lower() in ("no remarks", "") else (e.remarks or ""),
             ),
             _fmt(debit,  currency) if debit  else "",
             _fmt(credit, currency) if credit else "",
@@ -340,7 +345,8 @@ def download_customer_ledger_pdf(filters):
         )
 
     rows_html += _pdf_row("", "<strong>Closing Balance</strong>", "",
-                          _fmt(total_inv, currency), _fmt(total_rec, currency),
+                          _fmt(total_inv, currency) if total_inv else "",
+                          _fmt(total_rec, currency) if total_rec else "",
                           _fmt(running, currency), bold=True)
 
     closing     = running
@@ -357,30 +363,24 @@ def download_customer_ledger_pdf(filters):
         if logo_src else ""
     )
 
-    # ── Customer GSTIN (tax_id on Customer doc, or gstin on their primary Address)
-    cust_gstin = customer_doc.get("tax_id") or ""
-    if not cust_gstin:
-        row = frappe.db.sql(
-            """
-            SELECT a.gstin
-            FROM `tabAddress` a
-            JOIN `tabDynamic Link` dl ON dl.parent = a.name
-              AND dl.link_doctype = 'Customer' AND dl.link_name = %(customer)s
-            WHERE a.gstin IS NOT NULL AND a.gstin != ''
-            ORDER BY a.is_primary_address DESC
-            LIMIT 1
-            """,
-            {"customer": filters.customer},
-            as_dict=True,
-        )
-        cust_gstin = row[0].gstin if row else ""
-
-    # ── Company GSTIN
-    co_gstin = company_doc.get("tax_id") or ""
-
     def _meta_line(val):
         """Return a <div> line or empty string."""
         return "<div>{}</div>".format(val) if val else ""
+
+    # ── Customer GSTIN (tax_id first; then India Compliance GSTIN doctype)
+    cust_gstin = customer_doc.get("tax_id") or ""
+    if not cust_gstin:
+        try:
+            cust_gstin = frappe.db.get_value(
+                "GSTIN",
+                {"linked_to": "Customer", "linked_name": filters.customer},
+                "name",
+            ) or ""
+        except Exception:
+            cust_gstin = ""
+
+    # ── Company GSTIN
+    co_gstin = company_doc.get("tax_id") or ""
 
     html = """<!DOCTYPE html>
 <html>
@@ -388,97 +388,117 @@ def download_customer_ledger_pdf(filters):
 <meta charset="utf-8">
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; padding: 0; }}
+  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; }}
   .page {{ padding: 14px 18px; }}
-  .hdr td {{ vertical-align: top; }}
-  .co-name {{ font-size: 14px; font-weight: bold; color: #1a1a1a; margin-bottom: 4px; }}
-  .co-meta {{ font-size: 10px; color: #444; line-height: 1.7; }}
-  .stmt-title {{ font-size: 16px; font-weight: bold; text-align: right; color: #1a1a1a; }}
-  .stmt-period {{ font-size: 10px; color: #555; text-align: right; margin-top: 3px; }}
-  .divider {{ border-top: 2px solid #2c3e50; margin: 10px 0; }}
-  /* ── Below-divider row: summary left, customer right ── */
-  .sub-hdr td {{ vertical-align: top; padding-bottom: 12px; }}
-  .summary {{ border: 1px solid #ccc; background: #f7f8f9;
-              padding: 8px 14px; border-radius: 4px; display: inline-block; }}
-  .summary table {{ border-collapse: collapse; font-size: 11px; }}
-  .summary td {{ padding: 3px 12px 3px 0; white-space: nowrap; }}
-  .summary td:last-child {{ text-align: right; min-width: 95px; }}
-  .summary .total-row td {{ border-top: 1px solid #aaa; font-weight: bold; padding-top: 5px; }}
-  .to-label {{ font-size: 9px; font-weight: bold; color: #888; text-transform: uppercase;
-               letter-spacing: 0.8px; text-align: right; margin-bottom: 3px; }}
-  .cust-name {{ font-size: 13px; font-weight: bold; text-align: right; color: #1a1a1a; }}
-  .cust-meta {{ font-size: 10px; color: #444; line-height: 1.7; text-align: right; margin-top: 3px; }}
+  /* ── Accent bar ── */
+  .accent-bar {{ height: 5px; background: #1d3969; margin: -14px -18px 0; }}
+  /* ── Header area ── */
+  .hdr-area {{ background: #eef1f8; margin: 0 -18px; padding: 11px 18px 10px; }}
+  .co-name {{ font-size: 14px; font-weight: bold; color: #1d3969; margin-bottom: 3px; }}
+  .co-meta {{ font-size: 10px; color: #555; line-height: 1.7; }}
+  .stmt-title {{ font-size: 17px; font-weight: bold; text-align: right; color: #1d3969; }}
+  .stmt-period {{ font-size: 10px; color: #666; text-align: right; margin-top: 3px; }}
+  /* ── Divider ── */
+  .divider {{ border-top: 2px solid #1d3969; margin: 10px 0; }}
+  /* ── Summary cards ── */
+  .cards-tbl {{ width: 100%; border-collapse: separate; border-spacing: 5px 0; }}
+  .card {{ padding: 7px 8px; border: 1px solid #dde3ee; border-radius: 3px;
+           text-align: center; vertical-align: top; white-space: nowrap; }}
+  .card-lbl {{ font-size: 8.5px; color: #777; text-transform: uppercase;
+               letter-spacing: 0.4px; display: block; margin-bottom: 4px; }}
+  .card-val {{ font-size: 12px; font-weight: bold; display: block; }}
+  /* ── Customer block ── */
+  .to-block {{ border-left: 3px solid #1d3969; padding-left: 10px; }}
+  .to-label {{ font-size: 8.5px; font-weight: bold; color: #1d3969;
+               text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }}
+  .cust-name {{ font-size: 13px; font-weight: bold; color: #1a1a1a; }}
+  .cust-meta {{ font-size: 10px; color: #555; line-height: 1.7; margin-top: 2px; }}
+  /* ── Balance banner ── */
+  .bal-banner {{ background: #f8f9fc; border-left: 4px solid {bal_color};
+                 padding: 7px 14px; margin: 10px 0; }}
+  .bal-banner td {{ vertical-align: middle; }}
+  .bal-banner .bb-lbl {{ font-size: 11px; color: #555; }}
+  .bal-banner .bb-amt {{ font-size: 15px; font-weight: bold;
+                         text-align: right; color: {bal_color}; }}
   /* ── Ledger table ── */
   table.ledger {{ width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }}
-  table.ledger thead tr {{ background: #2c3e50; color: #fff; }}
-  table.ledger thead th {{ padding: 5px 6px; text-align: left; font-weight: 600; overflow: hidden; }}
+  table.ledger thead tr {{ background: #1d3969; color: #fff; }}
+  table.ledger thead th {{ padding: 6px 7px; text-align: left; font-weight: 600; overflow: hidden; }}
   table.ledger thead th.r {{ text-align: right; }}
-  table.ledger tbody tr:nth-child(even) {{ background: #f9f9f9; }}
-  table.ledger tbody td {{ padding: 4px 6px; border-bottom: 1px solid #eee;
+  table.ledger tbody tr:nth-child(even) {{ background: #f4f6fb; }}
+  table.ledger tbody td {{ padding: 5px 7px; border-bottom: 1px solid #e5eaf3;
                            vertical-align: top; overflow: hidden; word-wrap: break-word; }}
   table.ledger tbody td.r {{ text-align: right; white-space: nowrap; }}
-  .bold-row td {{ font-weight: bold; background: #eef0f2 !important; }}
-  .footer-bal {{ text-align: right; margin-top: 10px; font-size: 12px;
-                 font-weight: bold; color: {bal_color}; }}
+  .bold-row td {{ font-weight: bold; background: #e3e8f3 !important;
+                  border-top: 1px solid #b8c4dc; }}
 </style>
 </head>
 <body>
 <div class="page">
 
-  <!-- ── Top header: Logo+Company (left) | Title+Period (right) ── -->
-  <table class="hdr" width="100%" cellpadding="0" cellspacing="0">
-    <tr>
-      <td width="55%">
-        {logo}
-        <div class="co-name">{company_name}</div>
-        <div class="co-meta">
-          {co_addr}
-          {co_gstin}
-          {co_phone}
-          {co_email}
-        </div>
-      </td>
-      <td width="45%" style="vertical-align:top;">
-        <div class="stmt-title">Statement of Accounts</div>
-        <div class="stmt-period">{from_date} To {to_date}</div>
-      </td>
-    </tr>
-  </table>
+  <!-- ① Accent stripe -->
+  <div class="accent-bar"></div>
+
+  <!-- ② Header area with tinted background -->
+  <div class="hdr-area">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="55%" style="vertical-align:top;">
+          {logo}
+          <div class="co-name">{company_name}</div>
+          <div class="co-meta">
+            {co_addr}{co_phone}{co_email}
+          </div>
+        </td>
+        <td width="45%" style="vertical-align:top;">
+          <div class="stmt-title">Statement of Accounts</div>
+          <div class="stmt-period">{from_date} To {to_date}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
 
   <div class="divider"></div>
 
-  <!-- ── Below divider: Account Summary (left) | Customer details (right) ── -->
-  <table class="sub-hdr" width="100%" cellpadding="0" cellspacing="0">
+  <!-- ③ Summary cards (left) + ⑤ Customer left-border block (right) -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
     <tr>
-      <td width="45%">
-        <div class="summary">
-          <table>
-            <tr><td>Opening Balance</td><td>{open_bal}</td></tr>
-            <tr><td>Invoiced Amount</td> <td>{inv_amt}</td></tr>
-            <tr><td>Amount Received</td> <td>{rec_amt}</td></tr>
-            <tr class="total-row">
-              <td>{bal_label}</td>
-              <td style="color:{bal_color}">{bal_amt}</td>
-            </tr>
-          </table>
-        </div>
+      <td width="58%" style="vertical-align:top; padding-right:14px;">
+        <table class="cards-tbl" cellpadding="0" cellspacing="0">
+          <tr>
+            <td class="card" style="border-top:3px solid #607d8b;">
+              <span class="card-lbl">Opening Balance</span>
+              <span class="card-val" style="color:#455a64;">{open_bal}</span>
+            </td>
+            <td class="card" style="border-top:3px solid #1a56db;">
+              <span class="card-lbl">Invoiced Amount</span>
+              <span class="card-val" style="color:#1a56db;">{inv_amt}</span>
+            </td>
+            <td class="card" style="border-top:3px solid #27ae60;">
+              <span class="card-lbl">Amount Received</span>
+              <span class="card-val" style="color:#27ae60;">{rec_amt}</span>
+            </td>
+            <td class="card" style="border-top:3px solid {bal_color};">
+              <span class="card-lbl">{bal_label}</span>
+              <span class="card-val" style="color:{bal_color};">{bal_amt}</span>
+            </td>
+          </tr>
+        </table>
       </td>
-      <td width="55%" style="vertical-align:top;">
-        <div class="to-label">To</div>
-        <div class="cust-name">{cust_name}</div>
-        <div class="cust-meta">
-          {cust_code_line}
-          {cust_addr}
-          {cust_gstin}
+      <td width="42%" style="vertical-align:top;">
+        <div class="to-block">
+          <div class="to-label">To</div>
+          <div class="cust-name">{cust_name}</div>
+          <div class="cust-meta">{cust_code_line}{cust_addr}{cust_gstin_line}</div>
         </div>
       </td>
     </tr>
   </table>
 
-  <!-- ── Transaction Table ──────────────────────────────────────── -->
+  <!-- Transaction Table -->
   <table class="ledger">
     <colgroup>
-      <col style="width:68px;">
+      <col style="width:78px;">
       <col style="width:108px;">
       <col>
       <col style="width:88px;">
@@ -498,8 +518,16 @@ def download_customer_ledger_pdf(filters):
     <tbody>{rows}</tbody>
   </table>
 
-  <!-- ── Balance Due footer ─────────────────────────────────────── -->
-  <div class="footer-bal">{bal_label}: {bal_amt}</div>
+  <!-- Balance Due summary banner (bottom) -->
+  <table class="bal-banner" width="100%" cellpadding="0" cellspacing="0"
+         style="margin-top:14px;">
+    <tr>
+      <td class="bb-lbl">{bal_label}</td>
+      <td class="bb-amt">{bal_amt}</td>
+    </tr>
+  </table>
+
+  {tnc}
 
 </div>
 </body>
@@ -508,7 +536,6 @@ def download_customer_ledger_pdf(filters):
         logo=logo_html,
         company_name=company_doc.company_name,
         co_addr=_meta_line(company_addr),
-        co_gstin=_meta_line("GSTIN: {}".format(co_gstin) if co_gstin else ""),
         co_phone=_meta_line(company_doc.get("phone_no", "")),
         co_email=_meta_line(company_doc.get("email", "")),
         from_date=formatdate(filters.from_date),
@@ -517,26 +544,139 @@ def download_customer_ledger_pdf(filters):
         cust_code_line=_meta_line("Code: {}".format(customer_doc.name)
                                    if customer_doc.name != customer_doc.customer_name else ""),
         cust_addr=_meta_line(customer_addr),
-        cust_gstin=_meta_line("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
+        cust_gstin_line=_meta_line("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
         open_bal=_fmt(opening_balance, currency),
         inv_amt=_fmt(total_inv, currency),
         rec_amt=_fmt(total_rec, currency),
         bal_label=bal_label,
         bal_amt=_fmt(abs(closing), currency),
         rows=rows_html,
+        tnc=_build_tnc_html(),
     )
 
-    pdf = get_pdf(html, {"page-size": "A4", "orientation": "Portrait",
-                         "margin-top": "8mm", "margin-bottom": "8mm",
-                         "margin-left": "8mm", "margin-right": "8mm"})
+    # ── Page 2: Accounts Receivable (only when requested) ──────────
+    if include_ar:
+        ar_entries = _get_ar_entries(filters)
+        aging      = _build_ar_aging(ar_entries)
+        ar_page    = _build_ar_page(
+            ar_entries, aging, filters, currency,
+            logo_html, company_doc, customer_doc,
+            company_addr, customer_addr,
+            _meta_line,
+        )
+        html = html.replace("</div>\n</body>", "</div>\n" + ar_page + "\n</body>")
 
-    fname = "Ledger_{}_{}_to_{}.pdf".format(
+    import datetime
+    generated_on = datetime.datetime.now().strftime("%-d %b %Y, %-I:%M %p")
+    pdf = get_pdf(html, {
+        "page-size": "A4",
+        "orientation": "Portrait",
+        "margin-top": "8mm",
+        "margin-bottom": "14mm",
+        "margin-left": "8mm",
+        "margin-right": "8mm",
+        "footer-left": "Generated on {}".format(generated_on),
+        "footer-right": "Page [page] of [topage]",
+        "footer-font-size": "8",
+        "footer-font-name": "Arial",
+        "footer-spacing": "3",
+    })
+
+    prefix = "Statement" if include_ar else "Ledger"
+    fname = "{}_{}_{}_to_{}.pdf".format(
+        prefix,
         customer_doc.customer_name.replace(" ", "_"),
         filters.from_date, filters.to_date,
     )
     frappe.local.response.filename    = fname
     frappe.local.response.filecontent = pdf
     frappe.local.response.type        = "pdf"
+
+
+# ---------------------------------------------------------------------------
+# Email statement  (called from "Email to Customer" button)
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def email_customer_ledger(filters, include_ar=0):
+    """Build the same PDF as download_customer_ledger_pdf and send it to the
+    customer's primary email address."""
+    from frappe.utils.pdf import get_pdf
+
+    if isinstance(filters, str):
+        import json
+        filters = frappe._dict(json.loads(filters))
+    else:
+        filters = frappe._dict(filters)
+
+    include_ar = int(include_ar)
+
+    # Resolve customer email
+    customer_doc = frappe.get_doc("Customer", filters.customer)
+    to_email = (
+        customer_doc.get("email_id")
+        or frappe.db.get_value(
+            "Contact Email",
+            {
+                "parent": frappe.db.get_value(
+                    "Dynamic Link",
+                    {"link_doctype": "Customer", "link_name": filters.customer,
+                     "parenttype": "Contact"},
+                    "parent",
+                )
+            },
+            "email_id",
+        )
+    )
+
+    if not to_email:
+        frappe.throw(
+            "No email address found for customer <b>{}</b>. "
+            "Please add an email on the Customer or linked Contact.".format(filters.customer)
+        )
+
+    # Re-use the same HTML/PDF logic by calling the internal builder
+    # (we duplicate the minimal wiring rather than calling the download endpoint)
+    # Easiest: call download_customer_ledger_pdf with side-effect suppressed,
+    # then grab the pdf bytes before the response is set.
+    from frappe.utils.pdf import get_pdf as _get_pdf
+
+    # Build pdf via shared helper — invoke same logic but capture bytes
+    # We piggy-back on frappe.local.response being set then read it back.
+    download_customer_ledger_pdf(filters, include_ar=include_ar)
+    pdf_bytes = frappe.local.response.filecontent
+    fname     = frappe.local.response.filename
+
+    # Reset response type so the browser doesn't receive a PDF download
+    frappe.local.response.type        = "json"
+    frappe.local.response.filecontent = None
+    frappe.local.response.filename    = None
+
+    company_name = frappe.db.get_value("Company", filters.company, "company_name") or filters.company
+    subject = "{} — Account Statement ({} to {})".format(
+        company_name, filters.from_date, filters.to_date
+    )
+    body = (
+        "Dear {},<br><br>"
+        "Please find attached your account statement for the period "
+        "<b>{}</b> to <b>{}</b>.<br><br>"
+        "For any discrepancies, please inform us within 7 days of receiving this mail.<br><br>"
+        "Regards,<br>{}"
+    ).format(
+        customer_doc.customer_name,
+        filters.from_date, filters.to_date,
+        company_name,
+    )
+
+    frappe.sendmail(
+        recipients=[to_email],
+        subject=subject,
+        message=body,
+        attachments=[{"fname": fname, "fcontent": pdf_bytes}],
+        now=True,
+    )
+
+    return {"message": "Statement emailed to {}".format(to_email)}
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +744,278 @@ def _get_currency(filters):
     if filters.get("currency"):
         return filters.currency
     return frappe.db.get_value("Company", filters.get("company"), "default_currency") or "INR"
+
+
+# ---------------------------------------------------------------------------
+# Shared T&C block
+# ---------------------------------------------------------------------------
+
+def _build_tnc_html():
+    """Return the Terms & Conditions HTML block — used on both PDF pages."""
+    return """
+    <div style="margin-top:24px;border-top:1px solid #ccc;padding-top:12px;">
+      <div style="font-size:11px;font-weight:bold;text-transform:uppercase;
+                  letter-spacing:.6px;margin-bottom:8px;color:#1a1a1a;">Terms &amp; Conditions</div>
+      <ol style="font-size:9.5px;color:#333;line-height:1.8;padding-left:18px;margin:0 0 10px;">
+        <li>All payments shall be cleared within <strong>60 days</strong> of invoicing
+            (70 days in case of IGST billing).</li>
+        <li>Accounts overdue above <strong>75 days</strong> shall be frozen for billing
+            without prior written approval.</li>
+        <li>Interest <strong>@18% p.a.</strong> shall be charged on amounts overdue beyond
+            <strong>75 days</strong>.</li>
+        <li>Any discrepancies must be notified in <strong>writing within 7 days</strong>
+            of receipt; failing which, the statement shall be deemed accepted.</li>
+        <li>Payments by A/c payee Cheque / DD / NEFT / RTGS only. All payments to be made
+            in <strong>"SNRG Electricals India Pvt Ltd"</strong> bank accounts only.</li>
+        <li>All disputes subject to <strong>Delhi</strong> jurisdiction.</li>
+      </ol>
+      <div style="background:#fff3cd;border:1px solid #ffc107;border-left:4px solid #e67e22;
+                  border-radius:3px;padding:8px 12px;font-size:9.5px;color:#7d4e00;line-height:1.6;">
+        <strong>&#9888;&nbsp;IMPORTANT:</strong>&nbsp;Do <strong>NOT</strong> hand over cash
+        to anyone, including but not limited to employees of SNRG Group of Companies.
+        <strong>No cash receipts are valid under any circumstance.</strong>
+      </div>
+    </div>"""
+
+
+# ---------------------------------------------------------------------------
+# Accounts Receivable helpers
+# ---------------------------------------------------------------------------
+
+def _get_ar_entries(filters):
+    """Return outstanding Sales Invoices & Credit Notes for this customer."""
+    return frappe.db.sql(
+        """
+        SELECT
+            si.posting_date,
+            si.name                                                      AS voucher_no,
+            'Sales Invoice'                                              AS voucher_type,
+            CASE WHEN si.is_return = 1 THEN 'Credit Note' ELSE '' END   AS voucher_subtype,
+            si.outstanding_amount,
+            DATEDIFF(%(to_date)s, si.posting_date)                       AS ageing_days
+        FROM `tabSales Invoice` si
+        WHERE si.company   = %(company)s
+          AND si.customer  = %(customer)s
+          AND si.docstatus = 1
+          AND si.outstanding_amount != 0
+          AND si.posting_date <= %(to_date)s
+        ORDER BY si.posting_date ASC, si.name ASC
+        """,
+        {"company": filters.company, "customer": filters.customer, "to_date": filters.to_date},
+        as_dict=True,
+    )
+
+
+def _build_ar_aging(ar_entries):
+    """Bucket outstanding amounts into 0-30 / 31-60 / 61-75 / 76-90 / 90+ days."""
+    buckets = {"b0": 0.0, "b31": 0.0, "b61": 0.0, "b76": 0.0, "b90": 0.0}
+    for e in ar_entries:
+        amt  = flt(e.outstanding_amount)
+        days = int(e.ageing_days or 0)
+        if days <= 30:
+            buckets["b0"]  += amt
+        elif days <= 60:
+            buckets["b31"] += amt
+        elif days <= 75:
+            buckets["b61"] += amt
+        elif days <= 90:
+            buckets["b76"] += amt
+        else:
+            buckets["b90"] += amt
+    return buckets
+
+
+def _build_ar_page(ar_entries, aging, filters, currency,
+                   logo_html, company_doc, customer_doc,
+                   company_addr, customer_addr,
+                   meta_line_fn):
+    """Return the full HTML string for the AR page (page 2 of the PDF)."""
+
+    # ── AR table rows ──────────────────────────────────────────────────────
+    ar_rows_html = ""
+    total_outstanding = 0.0
+
+    if ar_entries:
+        for e in ar_entries:
+            amt  = flt(e.outstanding_amount)
+            days = int(e.ageing_days or 0)
+            total_outstanding += amt
+
+            subtype_str = e.voucher_subtype or ""
+            if days <= 0:
+                days_label = "<span style='color:#27ae60;'>Not due</span>"
+            elif days <= 30:
+                days_label = "<span style='color:#27ae60;font-weight:600;'>{} days</span>".format(days)
+            elif days <= 60:
+                days_label = "<span style='color:#f39c12;font-weight:600;'>{} days</span>".format(days)
+            elif days <= 75:
+                days_label = "<span style='color:#e67e22;font-weight:600;'>{} days</span>".format(days)
+            elif days <= 90:
+                days_label = "<span style='color:#e74c3c;font-weight:600;'>{} days</span>".format(days)
+            else:
+                days_label = "<span style='color:#8e1a1a;font-weight:600;'>{} days</span>".format(days)
+
+            ar_rows_html += (
+                "<tr>"
+                "<td>{date}</td>"
+                "<td>{vtype}</td>"
+                "<td>{sub}</td>"
+                "<td>{vno}</td>"
+                "<td class='r'>{amt}</td>"
+                "<td class='r'>{days}</td>"
+                "</tr>"
+            ).format(
+                date=formatdate(e.posting_date, "dd MMM yyyy"),
+                vtype=e.voucher_type,
+                sub=subtype_str,
+                vno=e.voucher_no,
+                amt=_fmt(amt, currency),
+                days=days_label,
+            )
+
+        # Totals row
+        ar_rows_html += (
+            "<tr class='bold-row'>"
+            "<td colspan='4'><strong>Total Outstanding</strong></td>"
+            "<td class='r'><strong>{}</strong></td>"
+            "<td></td>"
+            "</tr>"
+        ).format(_fmt(total_outstanding, currency))
+    else:
+        ar_rows_html = (
+            "<tr><td colspan='6' style='text-align:center;color:#888;"
+            "padding:16px;'>No outstanding transactions</td></tr>"
+        )
+
+    # ── Aging summary ──────────────────────────────────────────────────────
+    aging_html = """
+    <div style="margin-top:20px;">
+      <div style="font-size:12px;font-weight:bold;text-transform:uppercase;
+                  letter-spacing:.6px;margin-bottom:6px;color:#1d3969;">Ageing Summary</div>
+      <div style="border-top:2px solid #1d3969;margin-bottom:8px;"></div>
+      <table class="ledger" style="font-size:10.5px;">
+        <colgroup>
+          <col style="width:28%;">
+          <col style="width:14.4%;">
+          <col style="width:14.4%;">
+          <col style="width:14.4%;">
+          <col style="width:14.4%;">
+          <col style="width:14.4%;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th style="background:#1d3969;">AGEING</th>
+            <th class="r" style="background:#27ae60;">0 - 30</th>
+            <th class="r" style="background:#f39c12;">31 - 60</th>
+            <th class="r" style="background:#e67e22;">61 - 75</th>
+            <th class="r" style="background:#e74c3c;">76 - 90</th>
+            <th class="r" style="background:#8e1a1a;">90+</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Based on Posting Date<br>up to {as_of}</td>
+            <td class="r">{b0}</td>
+            <td class="r">{b31}</td>
+            <td class="r">{b61}</td>
+            <td class="r">{b76}</td>
+            <td class="r">{b90}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>""".format(
+        as_of=formatdate(filters.to_date),
+        b0=_fmt(aging["b0"],  currency),
+        b31=_fmt(aging["b31"], currency),
+        b61=_fmt(aging["b61"], currency),
+        b76=_fmt(aging["b76"], currency),
+        b90=_fmt(aging["b90"], currency),
+    )
+
+    # ── Terms & Conditions ─────────────────────────────────────────────────
+    tnc_html = _build_tnc_html()
+
+    # ── Assemble the full AR page ──────────────────────────────────────────
+    return """
+<div class="page" style="page-break-before:always;">
+
+  <!-- ① Accent stripe -->
+  <div class="accent-bar"></div>
+
+  <!-- ② Header area with tinted background -->
+  <div class="hdr-area">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="55%" style="vertical-align:top;">
+          {logo}
+          <div class="co-name">{company_name}</div>
+          <div class="co-meta">
+            {co_addr}{co_phone}{co_email}
+          </div>
+        </td>
+        <td width="45%" style="vertical-align:top;">
+          <div class="stmt-title">Accounts Receivable</div>
+          <div class="stmt-period">As of {to_date}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ⑤ Customer left-border block -->
+  <div style="margin-bottom:12px;">
+    <div class="to-block">
+      <div class="to-label">To</div>
+      <div class="cust-name">{cust_name}</div>
+      <div class="cust-meta">{cust_code_line}{cust_addr}{cust_gstin_line}</div>
+    </div>
+  </div>
+
+  <!-- AR Transactions Table -->
+  <table class="ledger">
+    <colgroup>
+      <col style="width:72px;">
+      <col style="width:110px;">
+      <col style="width:80px;">
+      <col style="width:130px;">
+      <col style="width:90px;">
+      <col style="width:72px;">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Voucher Type</th>
+        <th>Subtype</th>
+        <th>Voucher No</th>
+        <th class="r">Outstanding</th>
+        <th class="r">Ageing Days</th>
+      </tr>
+    </thead>
+    <tbody>{ar_rows}</tbody>
+  </table>
+
+  {aging_section}
+  {tnc_section}
+
+</div>""".format(
+        logo=logo_html,
+        company_name=company_doc.company_name,
+        co_addr=meta_line_fn(company_addr),
+        co_phone=meta_line_fn(company_doc.get("phone_no", "")),
+        co_email=meta_line_fn(company_doc.get("email", "")),
+        to_date=formatdate(filters.to_date),
+        cust_name=customer_doc.customer_name,
+        cust_code_line=meta_line_fn(
+            "Code: {}".format(customer_doc.name)
+            if customer_doc.name != customer_doc.customer_name else ""
+        ),
+        cust_addr=meta_line_fn(customer_addr),
+        cust_gstin_line=meta_line_fn("GSTIN: {}".format(customer_doc.get("tax_id")) if customer_doc.get("tax_id") else ""),
+        ar_rows=ar_rows_html,
+        aging_section=aging_html,
+        tnc_section=tnc_html,
+    )
 
 
 # ---------------------------------------------------------------------------
