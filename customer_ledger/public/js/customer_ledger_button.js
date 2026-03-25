@@ -14,6 +14,6 @@ frappe.ui.form.on("Customer", {
 				from_date:  fy_start,
 				to_date:    today,
 			});
-		}, __("View"));
+		});
 	},
 });
