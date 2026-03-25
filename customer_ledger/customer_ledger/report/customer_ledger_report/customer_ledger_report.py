@@ -357,14 +357,23 @@ def download_customer_ledger_pdf(filters):
         if logo_src else ""
     )
 
-    # ── Customer GSTIN (try tax_id, then GSTIN doctype for India GST)
+    # ── Customer GSTIN (tax_id on Customer doc, or gstin on their primary Address)
     cust_gstin = customer_doc.get("tax_id") or ""
     if not cust_gstin:
-        cust_gstin = frappe.db.get_value(
-            "GSTIN",
-            {"party_type": "Customer", "party": filters.customer},
-            "gstin",
-        ) or ""
+        row = frappe.db.sql(
+            """
+            SELECT a.gstin
+            FROM `tabAddress` a
+            JOIN `tabDynamic Link` dl ON dl.parent = a.name
+              AND dl.link_doctype = 'Customer' AND dl.link_name = %(customer)s
+            WHERE a.gstin IS NOT NULL AND a.gstin != ''
+            ORDER BY a.is_primary_address DESC
+            LIMIT 1
+            """,
+            {"customer": filters.customer},
+            as_dict=True,
+        )
+        cust_gstin = row[0].gstin if row else ""
 
     # ── Company GSTIN
     co_gstin = company_doc.get("tax_id") or ""
