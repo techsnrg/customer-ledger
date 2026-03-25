@@ -314,10 +314,14 @@ def download_customer_ledger_pdf(filters, include_ar=0):
     total_rec = 0.0
     rows_html = ""
 
+    def _fdate(d):
+        """Format date as '04 Sep 2025' — never wraps in the narrow Date column."""
+        return formatdate(d, "dd MMM yyyy") if d else ""
+
     rows_html += _pdf_row(
-        formatdate(filters.from_date), "Opening Balance", "",
-        _fmt(opening_balance if opening_balance > 0 else 0, currency),
-        _fmt(abs(opening_balance) if opening_balance < 0 else 0, currency),
+        _fdate(filters.from_date), "Opening Balance", "",
+        _fmt(opening_balance, currency) if opening_balance > 0 else "",
+        _fmt(abs(opening_balance), currency) if opening_balance < 0 else "",
         _fmt(opening_balance, currency), bold=True,
     )
 
@@ -328,7 +332,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         total_inv += debit
         total_rec += credit
         rows_html += _pdf_row(
-            formatdate(e.posting_date),
+            _fdate(e.posting_date),
             e.voucher_type,
             "{}{}<br><small style='color:#666'>{}</small>".format(
                 e.voucher_no,
@@ -341,7 +345,8 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         )
 
     rows_html += _pdf_row("", "<strong>Closing Balance</strong>", "",
-                          _fmt(total_inv, currency), _fmt(total_rec, currency),
+                          _fmt(total_inv, currency) if total_inv else "",
+                          _fmt(total_rec, currency) if total_rec else "",
                           _fmt(running, currency), bold=True)
 
     closing     = running
@@ -361,6 +366,21 @@ def download_customer_ledger_pdf(filters, include_ar=0):
     def _meta_line(val):
         """Return a <div> line or empty string."""
         return "<div>{}</div>".format(val) if val else ""
+
+    # ── Customer GSTIN (tax_id first; then India Compliance GSTIN doctype)
+    cust_gstin = customer_doc.get("tax_id") or ""
+    if not cust_gstin:
+        try:
+            cust_gstin = frappe.db.get_value(
+                "GSTIN",
+                {"linked_to": "Customer", "linked_name": filters.customer},
+                "name",
+            ) or ""
+        except Exception:
+            cust_gstin = ""
+
+    # ── Company GSTIN
+    co_gstin = company_doc.get("tax_id") or ""
 
     html = """<!DOCTYPE html>
 <html>
@@ -469,7 +489,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         <div class="to-block">
           <div class="to-label">To</div>
           <div class="cust-name">{cust_name}</div>
-          <div class="cust-meta">{cust_code_line}{cust_addr}</div>
+          <div class="cust-meta">{cust_code_line}{cust_addr}{cust_gstin_line}</div>
         </div>
       </td>
     </tr>
@@ -478,7 +498,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
   <!-- Transaction Table -->
   <table class="ledger">
     <colgroup>
-      <col style="width:68px;">
+      <col style="width:78px;">
       <col style="width:108px;">
       <col>
       <col style="width:88px;">
@@ -524,6 +544,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         cust_code_line=_meta_line("Code: {}".format(customer_doc.name)
                                    if customer_doc.name != customer_doc.customer_name else ""),
         cust_addr=_meta_line(customer_addr),
+        cust_gstin_line=_meta_line("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
         open_bal=_fmt(opening_balance, currency),
         inv_amt=_fmt(total_inv, currency),
         rec_amt=_fmt(total_rec, currency),
@@ -844,7 +865,7 @@ def _build_ar_page(ar_entries, aging, filters, currency,
                 "<td class='r'>{days}</td>"
                 "</tr>"
             ).format(
-                date=formatdate(e.posting_date),
+                date=formatdate(e.posting_date, "dd MMM yyyy"),
                 vtype=e.voucher_type,
                 sub=subtype_str,
                 vno=e.voucher_no,
@@ -947,7 +968,7 @@ def _build_ar_page(ar_entries, aging, filters, currency,
     <div class="to-block">
       <div class="to-label">To</div>
       <div class="cust-name">{cust_name}</div>
-      <div class="cust-meta">{cust_code_line}{cust_addr}</div>
+      <div class="cust-meta">{cust_code_line}{cust_addr}{cust_gstin_line}</div>
     </div>
   </div>
 
@@ -990,6 +1011,7 @@ def _build_ar_page(ar_entries, aging, filters, currency,
             if customer_doc.name != customer_doc.customer_name else ""
         ),
         cust_addr=meta_line_fn(customer_addr),
+        cust_gstin_line=meta_line_fn("GSTIN: {}".format(customer_doc.get("tax_id")) if customer_doc.get("tax_id") else ""),
         ar_rows=ar_rows_html,
         aging_section=aging_html,
         tnc_section=tnc_html,
