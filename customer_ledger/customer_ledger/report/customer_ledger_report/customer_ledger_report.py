@@ -507,6 +507,8 @@ def download_customer_ledger_pdf(filters, include_ar=0):
     <tbody>{rows}</tbody>
   </table>
 
+  {tnc}
+
 </div>
 </body>
 </html>""".format(
@@ -528,6 +530,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         bal_label=bal_label,
         bal_amt=_fmt(abs(closing), currency),
         rows=rows_html,
+        tnc=_build_tnc_html(),
     )
 
     # ── Page 2: Accounts Receivable (only when requested) ──────────
@@ -723,6 +726,38 @@ def _get_currency(filters):
 
 
 # ---------------------------------------------------------------------------
+# Shared T&C block
+# ---------------------------------------------------------------------------
+
+def _build_tnc_html():
+    """Return the Terms & Conditions HTML block — used on both PDF pages."""
+    return """
+    <div style="margin-top:24px;border-top:1px solid #ccc;padding-top:12px;">
+      <div style="font-size:11px;font-weight:bold;text-transform:uppercase;
+                  letter-spacing:.6px;margin-bottom:8px;color:#1a1a1a;">Terms &amp; Conditions</div>
+      <ol style="font-size:9.5px;color:#333;line-height:1.8;padding-left:18px;margin:0 0 10px;">
+        <li>All payments shall be cleared within <strong>60 days</strong> of invoicing
+            (70 days in case of IGST billing).</li>
+        <li>Accounts overdue above <strong>75 days</strong> shall be frozen for billing
+            without prior written approval.</li>
+        <li>Interest <strong>@18% p.a.</strong> shall be charged on amounts overdue beyond
+            <strong>30 days</strong>.</li>
+        <li>Any discrepancies must be notified in <strong>writing within 7 days</strong>
+            of receipt; failing which, the statement shall be deemed accepted.</li>
+        <li>Payments by A/c payee Cheque / DD / NEFT / RTGS only. All payments to be made
+            in <strong>"SNRG Electricals India Pvt Ltd"</strong> bank accounts only.</li>
+        <li>All disputes subject to <strong>Delhi</strong> jurisdiction.</li>
+      </ol>
+      <div style="background:#fff3cd;border:1px solid #ffc107;border-left:4px solid #e67e22;
+                  border-radius:3px;padding:8px 12px;font-size:9.5px;color:#7d4e00;line-height:1.6;">
+        <strong>&#9888;&nbsp;IMPORTANT:</strong>&nbsp;Do <strong>NOT</strong> hand over cash
+        to anyone, including but not limited to employees of SNRG Group of Companies.
+        <strong>No cash receipts are valid under any circumstance.</strong>
+      </div>
+    </div>"""
+
+
+# ---------------------------------------------------------------------------
 # Accounts Receivable helpers
 # ---------------------------------------------------------------------------
 
@@ -877,19 +912,7 @@ def _build_ar_page(ar_entries, aging, filters, currency,
     )
 
     # ── Terms & Conditions ─────────────────────────────────────────────────
-    tnc_html = """
-    <div style="margin-top:24px;border-top:1px solid #ccc;padding-top:12px;">
-      <div style="font-size:11px;font-weight:bold;text-transform:uppercase;
-                  letter-spacing:.6px;margin-bottom:8px;color:#1a1a1a;">Terms &amp; Conditions</div>
-      <ol style="font-size:10px;color:#333;line-height:1.8;padding-left:18px;margin:0;">
-        <li>All payments shall be cleared within <strong>60 days</strong> of invoicing
-            (70 days in case of IGST billing).</li>
-        <li>Accounts overdue above <strong>75 days</strong> shall be frozen for billing.</li>
-        <li>Interest <strong>@18%</strong> shall be charged on overdues.</li>
-        <li>Any discrepancies should be informed within <strong>7 days</strong>
-            of receiving this letter.</li>
-      </ol>
-    </div>"""
+    tnc_html = _build_tnc_html()
 
     # ── Assemble the full AR page ──────────────────────────────────────────
     return """
