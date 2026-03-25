@@ -394,11 +394,13 @@ def download_customer_ledger_pdf(filters, include_ar=0):
   .cust-name {{ font-size: 13px; font-weight: bold; color: #1a1a1a; }}
   .cust-meta {{ font-size: 10px; color: #555; line-height: 1.7; margin-top: 2px; }}
   /* ── Balance banner ── */
-  .bal-banner {{ background: {bal_color}; border-radius: 3px;
+  .bal-banner {{ background: #f8f9fc; border: 1px solid #dde3ee;
+                 border-left: 4px solid {bal_color}; border-radius: 3px;
                  padding: 7px 14px; margin: 10px 0 10px; }}
-  .bal-banner td {{ color: #fff; vertical-align: middle; }}
-  .bal-banner .bb-lbl {{ font-size: 11px; opacity: 0.9; }}
-  .bal-banner .bb-amt {{ font-size: 15px; font-weight: bold; text-align: right; }}
+  .bal-banner td {{ vertical-align: middle; }}
+  .bal-banner .bb-lbl {{ font-size: 11px; color: #555; }}
+  .bal-banner .bb-amt {{ font-size: 15px; font-weight: bold;
+                         text-align: right; color: {bal_color}; }}
   /* ── Ledger table ── */
   table.ledger {{ width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }}
   table.ledger thead tr {{ background: #1d3969; color: #fff; }}
@@ -749,21 +751,21 @@ def _get_ar_entries(filters):
 
 
 def _build_ar_aging(ar_entries):
-    """Bucket outstanding amounts into 0-30 / 30-60 / 60-90 / 90-120 / 120+ days."""
-    buckets = {"b0": 0.0, "b30": 0.0, "b60": 0.0, "b90": 0.0, "b120": 0.0}
+    """Bucket outstanding amounts into 0-30 / 31-60 / 61-75 / 76-90 / 90+ days."""
+    buckets = {"b0": 0.0, "b31": 0.0, "b61": 0.0, "b76": 0.0, "b90": 0.0}
     for e in ar_entries:
         amt  = flt(e.outstanding_amount)
         days = int(e.ageing_days or 0)
         if days <= 30:
-            buckets["b0"]   += amt
+            buckets["b0"]  += amt
         elif days <= 60:
-            buckets["b30"]  += amt
+            buckets["b31"] += amt
+        elif days <= 75:
+            buckets["b61"] += amt
         elif days <= 90:
-            buckets["b60"]  += amt
-        elif days <= 120:
-            buckets["b90"]  += amt
+            buckets["b76"] += amt
         else:
-            buckets["b120"] += amt
+            buckets["b90"] += amt
     return buckets
 
 
@@ -788,10 +790,14 @@ def _build_ar_page(ar_entries, aging, filters, currency,
                 days_label = "<span style='color:#27ae60;'>Not due</span>"
             elif days <= 30:
                 days_label = "<span style='color:#27ae60;font-weight:600;'>{} days</span>".format(days)
+            elif days <= 60:
+                days_label = "<span style='color:#f39c12;font-weight:600;'>{} days</span>".format(days)
             elif days <= 75:
                 days_label = "<span style='color:#e67e22;font-weight:600;'>{} days</span>".format(days)
+            elif days <= 90:
+                days_label = "<span style='color:#e74c3c;font-weight:600;'>{} days</span>".format(days)
             else:
-                days_label = "<span style='color:#c0392b;font-weight:600;'>{} days</span>".format(days)
+                days_label = "<span style='color:#8e1a1a;font-weight:600;'>{} days</span>".format(days)
 
             ar_rows_html += (
                 "<tr>"
@@ -844,30 +850,30 @@ def _build_ar_page(ar_entries, aging, filters, currency,
           <tr>
             <th style="background:#1d3969;">AGEING</th>
             <th class="r" style="background:#27ae60;">0 - 30</th>
-            <th class="r" style="background:#f39c12;">30 - 60</th>
-            <th class="r" style="background:#e67e22;">60 - 90</th>
-            <th class="r" style="background:#e74c3c;">90 - 120</th>
-            <th class="r" style="background:#8e1a1a;">120+</th>
+            <th class="r" style="background:#f39c12;">31 - 60</th>
+            <th class="r" style="background:#e67e22;">61 - 75</th>
+            <th class="r" style="background:#e74c3c;">76 - 90</th>
+            <th class="r" style="background:#8e1a1a;">90+</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td>Based on Posting Date<br>up to {as_of}</td>
             <td class="r">{b0}</td>
-            <td class="r">{b30}</td>
-            <td class="r">{b60}</td>
+            <td class="r">{b31}</td>
+            <td class="r">{b61}</td>
+            <td class="r">{b76}</td>
             <td class="r">{b90}</td>
-            <td class="r">{b120}</td>
           </tr>
         </tbody>
       </table>
     </div>""".format(
         as_of=formatdate(filters.to_date),
-        b0=_fmt(aging["b0"],   currency),
-        b30=_fmt(aging["b30"],  currency),
-        b60=_fmt(aging["b60"],  currency),
-        b90=_fmt(aging["b90"],  currency),
-        b120=_fmt(aging["b120"], currency),
+        b0=_fmt(aging["b0"],  currency),
+        b31=_fmt(aging["b31"], currency),
+        b61=_fmt(aging["b61"], currency),
+        b76=_fmt(aging["b76"], currency),
+        b90=_fmt(aging["b90"], currency),
     )
 
     # ── Terms & Conditions ─────────────────────────────────────────────────
