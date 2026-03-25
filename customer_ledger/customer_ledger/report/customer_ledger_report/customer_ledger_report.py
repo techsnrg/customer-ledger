@@ -89,7 +89,7 @@ def _get_data(filters):
             "voucher_type":    entry.voucher_type,
             "voucher_subtype": entry.voucher_subtype or "",
             "voucher_no":      entry.voucher_no,
-            "remarks":         entry.remarks or "",
+            "remarks":         "" if (entry.remarks or "").strip().lower() in ("no remarks", "") else entry.remarks,
             "debit":           flt(entry.debit),
             "credit":          flt(entry.credit),
             "balance":         running_balance,
@@ -333,7 +333,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
             "{}{}<br><small style='color:#666'>{}</small>".format(
                 e.voucher_no,
                 " <em>({})</em>".format(e.voucher_subtype) if e.voucher_subtype else "",
-                e.remarks or "",
+                "" if (e.remarks or "").strip().lower() in ("no remarks", "") else (e.remarks or ""),
             ),
             _fmt(debit,  currency) if debit  else "",
             _fmt(credit, currency) if credit else "",
@@ -514,9 +514,21 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         )
         html = html.replace("</div>\n</body>", "</div>\n" + ar_page + "\n</body>")
 
-    pdf = get_pdf(html, {"page-size": "A4", "orientation": "Portrait",
-                         "margin-top": "8mm", "margin-bottom": "8mm",
-                         "margin-left": "8mm", "margin-right": "8mm"})
+    import datetime
+    generated_on = datetime.datetime.now().strftime("%-d %b %Y, %-I:%M %p")
+    pdf = get_pdf(html, {
+        "page-size": "A4",
+        "orientation": "Portrait",
+        "margin-top": "8mm",
+        "margin-bottom": "14mm",
+        "margin-left": "8mm",
+        "margin-right": "8mm",
+        "footer-left": "Generated on {}".format(generated_on),
+        "footer-right": "Page [page] of [topage]",
+        "footer-font-size": "8",
+        "footer-font-name": "Arial",
+        "footer-spacing": "3",
+    })
 
     prefix = "Statement" if include_ar else "Ledger"
     fname = "{}_{}_{}_to_{}.pdf".format(
@@ -692,12 +704,11 @@ def _get_ar_entries(filters):
         """
         SELECT
             si.posting_date,
-            si.due_date,
             si.name                                                      AS voucher_no,
             'Sales Invoice'                                              AS voucher_type,
             CASE WHEN si.is_return = 1 THEN 'Credit Note' ELSE '' END   AS voucher_subtype,
             si.outstanding_amount,
-            DATEDIFF(%(to_date)s, IFNULL(si.due_date, si.posting_date))   AS ageing_days
+            DATEDIFF(%(to_date)s, si.posting_date)                       AS ageing_days
         FROM `tabSales Invoice` si
         WHERE si.company   = %(company)s
           AND si.customer  = %(customer)s
@@ -746,10 +757,7 @@ def _build_ar_page(ar_entries, aging, filters, currency,
             days = int(e.ageing_days or 0)
             total_outstanding += amt
 
-            subtype_str = (
-                " <em style='color:#555;'>({})</em>".format(e.voucher_subtype)
-                if e.voucher_subtype else ""
-            )
+            subtype_str = e.voucher_subtype or ""
             if days <= 0:
                 days_label = "<span style='color:#27ae60;'>Not due</span>"
             elif days <= 30:
@@ -762,9 +770,9 @@ def _build_ar_page(ar_entries, aging, filters, currency,
             ar_rows_html += (
                 "<tr>"
                 "<td>{date}</td>"
-                "<td>{vtype}{sub}</td>"
+                "<td>{vtype}</td>"
+                "<td>{sub}</td>"
                 "<td>{vno}</td>"
-                "<td class='r'>{due}</td>"
                 "<td class='r'>{amt}</td>"
                 "<td class='r'>{days}</td>"
                 "</tr>"
@@ -773,7 +781,6 @@ def _build_ar_page(ar_entries, aging, filters, currency,
                 vtype=e.voucher_type,
                 sub=subtype_str,
                 vno=e.voucher_no,
-                due=formatdate(e.due_date) if e.due_date else "&mdash;",
                 amt=_fmt(amt, currency),
                 days=days_label,
             )
@@ -896,9 +903,9 @@ def _build_ar_page(ar_entries, aging, filters, currency,
   <table class="ledger">
     <colgroup>
       <col style="width:72px;">
-      <col style="width:140px;">
-      <col style="width:120px;">
-      <col style="width:72px;">
+      <col style="width:110px;">
+      <col style="width:80px;">
+      <col style="width:130px;">
       <col style="width:90px;">
       <col style="width:72px;">
     </colgroup>
@@ -906,8 +913,8 @@ def _build_ar_page(ar_entries, aging, filters, currency,
       <tr>
         <th>Date</th>
         <th>Voucher Type</th>
+        <th>Subtype</th>
         <th>Voucher No</th>
-        <th class="r">Due Date</th>
         <th class="r">Outstanding</th>
         <th class="r">Ageing Days</th>
       </tr>
