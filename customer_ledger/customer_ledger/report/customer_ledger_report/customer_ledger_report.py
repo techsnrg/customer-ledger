@@ -530,6 +530,92 @@ def download_customer_ledger_pdf(filters, include_ar=0):
 
 
 # ---------------------------------------------------------------------------
+# Email statement  (called from "Email to Customer" button)
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def email_customer_ledger(filters, include_ar=0):
+    """Build the same PDF as download_customer_ledger_pdf and send it to the
+    customer's primary email address."""
+    from frappe.utils.pdf import get_pdf
+
+    if isinstance(filters, str):
+        import json
+        filters = frappe._dict(json.loads(filters))
+    else:
+        filters = frappe._dict(filters)
+
+    include_ar = int(include_ar)
+
+    # Resolve customer email
+    customer_doc = frappe.get_doc("Customer", filters.customer)
+    to_email = (
+        customer_doc.get("email_id")
+        or frappe.db.get_value(
+            "Contact Email",
+            {
+                "parent": frappe.db.get_value(
+                    "Dynamic Link",
+                    {"link_doctype": "Customer", "link_name": filters.customer,
+                     "parenttype": "Contact"},
+                    "parent",
+                )
+            },
+            "email_id",
+        )
+    )
+
+    if not to_email:
+        frappe.throw(
+            "No email address found for customer <b>{}</b>. "
+            "Please add an email on the Customer or linked Contact.".format(filters.customer)
+        )
+
+    # Re-use the same HTML/PDF logic by calling the internal builder
+    # (we duplicate the minimal wiring rather than calling the download endpoint)
+    # Easiest: call download_customer_ledger_pdf with side-effect suppressed,
+    # then grab the pdf bytes before the response is set.
+    from frappe.utils.pdf import get_pdf as _get_pdf
+
+    # Build pdf via shared helper — invoke same logic but capture bytes
+    # We piggy-back on frappe.local.response being set then read it back.
+    download_customer_ledger_pdf(filters, include_ar=include_ar)
+    pdf_bytes = frappe.local.response.filecontent
+    fname     = frappe.local.response.filename
+
+    # Reset response type so the browser doesn't receive a PDF download
+    frappe.local.response.type        = "json"
+    frappe.local.response.filecontent = None
+    frappe.local.response.filename    = None
+
+    company_name = frappe.db.get_value("Company", filters.company, "company_name") or filters.company
+    subject = "{} — Account Statement ({} to {})".format(
+        company_name, filters.from_date, filters.to_date
+    )
+    body = (
+        "Dear {},<br><br>"
+        "Please find attached your account statement for the period "
+        "<b>{}</b> to <b>{}</b>.<br><br>"
+        "For any discrepancies, please inform us within 7 days of receiving this mail.<br><br>"
+        "Regards,<br>{}"
+    ).format(
+        customer_doc.customer_name,
+        filters.from_date, filters.to_date,
+        company_name,
+    )
+
+    frappe.sendmail(
+        recipients=[to_email],
+        subject=subject,
+        message=body,
+        attachments=[{"fname": fname, "fcontent": pdf_bytes}],
+        now=True,
+    )
+
+    return {"message": "Statement emailed to {}".format(to_email)}
+
+
+# ---------------------------------------------------------------------------
 # HTML helpers for PDF rows
 # ---------------------------------------------------------------------------
 
@@ -611,15 +697,16 @@ def _get_ar_entries(filters):
             'Sales Invoice'                                              AS voucher_type,
             CASE WHEN si.is_return = 1 THEN 'Credit Note' ELSE '' END   AS voucher_subtype,
             si.outstanding_amount,
-            DATEDIFF(CURDATE(), IFNULL(si.due_date, si.posting_date))   AS ageing_days
+            DATEDIFF(%(to_date)s, IFNULL(si.due_date, si.posting_date))   AS ageing_days
         FROM `tabSales Invoice` si
         WHERE si.company   = %(company)s
           AND si.customer  = %(customer)s
           AND si.docstatus = 1
           AND si.outstanding_amount != 0
+          AND si.posting_date <= %(to_date)s
         ORDER BY si.posting_date ASC, si.name ASC
         """,
-        {"company": filters.company, "customer": filters.customer},
+        {"company": filters.company, "customer": filters.customer, "to_date": filters.to_date},
         as_dict=True,
     )
 
@@ -663,11 +750,14 @@ def _build_ar_page(ar_entries, aging, filters, currency,
                 " <em style='color:#555;'>({})</em>".format(e.voucher_subtype)
                 if e.voucher_subtype else ""
             )
-            days_label = (
-                "<span style='color:#c0392b;font-weight:600;'>{} days</span>".format(days)
-                if days > 0 else
-                "<span style='color:#27ae60;'>Not due</span>"
-            )
+            if days <= 0:
+                days_label = "<span style='color:#27ae60;'>Not due</span>"
+            elif days <= 30:
+                days_label = "<span style='color:#27ae60;font-weight:600;'>{} days</span>".format(days)
+            elif days <= 75:
+                days_label = "<span style='color:#e67e22;font-weight:600;'>{} days</span>".format(days)
+            else:
+                days_label = "<span style='color:#c0392b;font-weight:600;'>{} days</span>".format(days)
 
             ar_rows_html += (
                 "<tr>"
@@ -739,7 +829,7 @@ def _build_ar_page(ar_entries, aging, filters, currency,
         </tbody>
       </table>
     </div>""".format(
-        as_of=formatdate(nowdate()),
+        as_of=formatdate(filters.to_date),
         b0=_fmt(aging["b0"],   currency),
         b30=_fmt(aging["b30"],  currency),
         b60=_fmt(aging["b60"],  currency),

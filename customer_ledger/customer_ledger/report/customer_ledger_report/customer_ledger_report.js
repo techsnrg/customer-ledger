@@ -111,6 +111,35 @@ frappe.query_reports["Customer Ledger Report"] = {
 			);
 			window.open(url);
 		});
+
+		// Email Ledger + AR to customer's primary email
+		report.page.add_inner_button(__("Email to Customer"), function () {
+			var filters = report.get_filter_values();
+			if (!filters || !filters.customer) {
+				frappe.msgprint(__("Please select a Customer before emailing."));
+				return;
+			}
+			frappe.confirm(
+				__("Send Ledger + AR statement to the customer's email address?"),
+				function () {
+					frappe.call({
+						method: "customer_ledger.customer_ledger.report" +
+							".customer_ledger_report.customer_ledger_report.email_customer_ledger",
+						args: { filters: JSON.stringify(filters), include_ar: 1 },
+						freeze: true,
+						freeze_message: __("Sending email…"),
+						callback: function (r) {
+							if (r.message) {
+								frappe.show_alert({
+									message: __(r.message.message),
+									indicator: "green",
+								});
+							}
+						},
+					});
+				}
+			);
+		});
 	},
 
 	formatter: function (value, row, column, data, default_formatter) {
