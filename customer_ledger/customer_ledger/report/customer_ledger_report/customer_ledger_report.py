@@ -526,11 +526,22 @@ def download_customer_ledger_pdf(filters):
         rows=rows_html,
     )
 
+    # ── Page 2: Accounts Receivable ────────────────────────────────
+    ar_entries = _get_ar_entries(filters)
+    aging      = _build_ar_aging(ar_entries)
+    ar_page    = _build_ar_page(
+        ar_entries, aging, filters, currency,
+        logo_html, company_doc, customer_doc,
+        company_addr, customer_addr, cust_gstin, co_gstin,
+        _meta_line,
+    )
+    html = html.replace("</div>\n</body>", "</div>\n" + ar_page + "\n</body>")
+
     pdf = get_pdf(html, {"page-size": "A4", "orientation": "Portrait",
                          "margin-top": "8mm", "margin-bottom": "8mm",
                          "margin-left": "8mm", "margin-right": "8mm"})
 
-    fname = "Ledger_{}_{}_to_{}.pdf".format(
+    fname = "Statement_{}_{}_to_{}.pdf".format(
         customer_doc.customer_name.replace(" ", "_"),
         filters.from_date, filters.to_date,
     )
@@ -604,6 +615,261 @@ def _get_currency(filters):
     if filters.get("currency"):
         return filters.currency
     return frappe.db.get_value("Company", filters.get("company"), "default_currency") or "INR"
+
+
+# ---------------------------------------------------------------------------
+# Accounts Receivable helpers
+# ---------------------------------------------------------------------------
+
+def _get_ar_entries(filters):
+    """Return outstanding Sales Invoices & Credit Notes for this customer."""
+    return frappe.db.sql(
+        """
+        SELECT
+            si.posting_date,
+            si.due_date,
+            si.name                                                      AS voucher_no,
+            'Sales Invoice'                                              AS voucher_type,
+            CASE WHEN si.is_return = 1 THEN 'Credit Note' ELSE '' END   AS voucher_subtype,
+            si.outstanding_amount,
+            DATEDIFF(CURDATE(), IFNULL(si.due_date, si.posting_date))   AS ageing_days
+        FROM `tabSales Invoice` si
+        WHERE si.company   = %(company)s
+          AND si.customer  = %(customer)s
+          AND si.docstatus = 1
+          AND si.outstanding_amount != 0
+        ORDER BY si.posting_date ASC, si.name ASC
+        """,
+        {"company": filters.company, "customer": filters.customer},
+        as_dict=True,
+    )
+
+
+def _build_ar_aging(ar_entries):
+    """Bucket outstanding amounts into 0-30 / 30-60 / 60-90 / 90-120 / 120+ days."""
+    buckets = {"b0": 0.0, "b30": 0.0, "b60": 0.0, "b90": 0.0, "b120": 0.0}
+    for e in ar_entries:
+        amt  = flt(e.outstanding_amount)
+        days = int(e.ageing_days or 0)
+        if days <= 30:
+            buckets["b0"]   += amt
+        elif days <= 60:
+            buckets["b30"]  += amt
+        elif days <= 90:
+            buckets["b60"]  += amt
+        elif days <= 120:
+            buckets["b90"]  += amt
+        else:
+            buckets["b120"] += amt
+    return buckets
+
+
+def _build_ar_page(ar_entries, aging, filters, currency,
+                   logo_html, company_doc, customer_doc,
+                   company_addr, customer_addr, cust_gstin, co_gstin,
+                   meta_line_fn):
+    """Return the full HTML string for the AR page (page 2 of the PDF)."""
+
+    # ── AR table rows ──────────────────────────────────────────────────────
+    ar_rows_html = ""
+    total_outstanding = 0.0
+
+    if ar_entries:
+        for e in ar_entries:
+            amt  = flt(e.outstanding_amount)
+            days = int(e.ageing_days or 0)
+            total_outstanding += amt
+
+            subtype_str = (
+                " <em style='color:#555;'>({})</em>".format(e.voucher_subtype)
+                if e.voucher_subtype else ""
+            )
+            days_label = (
+                "<span style='color:#c0392b;font-weight:600;'>{} days</span>".format(days)
+                if days > 0 else
+                "<span style='color:#27ae60;'>Not due</span>"
+            )
+
+            ar_rows_html += (
+                "<tr>"
+                "<td>{date}</td>"
+                "<td>{vtype}{sub}</td>"
+                "<td>{vno}</td>"
+                "<td class='r'>{due}</td>"
+                "<td class='r'>{amt}</td>"
+                "<td class='r'>{days}</td>"
+                "</tr>"
+            ).format(
+                date=formatdate(e.posting_date),
+                vtype=e.voucher_type,
+                sub=subtype_str,
+                vno=e.voucher_no,
+                due=formatdate(e.due_date) if e.due_date else "&mdash;",
+                amt=_fmt(amt, currency),
+                days=days_label,
+            )
+
+        # Totals row
+        ar_rows_html += (
+            "<tr class='bold-row'>"
+            "<td colspan='4'><strong>Total Outstanding</strong></td>"
+            "<td class='r'><strong>{}</strong></td>"
+            "<td></td>"
+            "</tr>"
+        ).format(_fmt(total_outstanding, currency))
+    else:
+        ar_rows_html = (
+            "<tr><td colspan='6' style='text-align:center;color:#888;"
+            "padding:16px;'>No outstanding transactions</td></tr>"
+        )
+
+    # ── Aging summary ──────────────────────────────────────────────────────
+    aging_html = """
+    <div style="margin-top:20px;">
+      <div style="font-size:12px;font-weight:bold;text-transform:uppercase;
+                  letter-spacing:.6px;margin-bottom:6px;color:#1a1a1a;">Aging Summary</div>
+      <div style="border-top:2px solid #3498db;margin-bottom:8px;"></div>
+      <table class="ledger" style="font-size:10.5px;">
+        <colgroup>
+          <col style="width:28%;">
+          <col style="width:14.4%;">
+          <col style="width:14.4%;">
+          <col style="width:14.4%;">
+          <col style="width:14.4%;">
+          <col style="width:14.4%;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>AGING</th>
+            <th class="r">0 - 30</th>
+            <th class="r">30 - 60</th>
+            <th class="r">60 - 90</th>
+            <th class="r">90 - 120</th>
+            <th class="r">120+</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Based on Due Date<br>up to {as_of}</td>
+            <td class="r">{b0}</td>
+            <td class="r">{b30}</td>
+            <td class="r">{b60}</td>
+            <td class="r">{b90}</td>
+            <td class="r">{b120}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>""".format(
+        as_of=formatdate(nowdate()),
+        b0=_fmt(aging["b0"],   currency),
+        b30=_fmt(aging["b30"],  currency),
+        b60=_fmt(aging["b60"],  currency),
+        b90=_fmt(aging["b90"],  currency),
+        b120=_fmt(aging["b120"], currency),
+    )
+
+    # ── Terms & Conditions ─────────────────────────────────────────────────
+    tnc_html = """
+    <div style="margin-top:24px;border-top:1px solid #ccc;padding-top:12px;">
+      <div style="font-size:11px;font-weight:bold;text-transform:uppercase;
+                  letter-spacing:.6px;margin-bottom:8px;color:#1a1a1a;">Terms &amp; Conditions</div>
+      <ol style="font-size:10px;color:#333;line-height:1.8;padding-left:18px;margin:0;">
+        <li>All payments shall be cleared within <strong>60 days</strong> of invoicing
+            (70 days in case of IGST billing).</li>
+        <li>Accounts overdue above <strong>75 days</strong> shall be frozen for billing.</li>
+        <li>Interest <strong>@18%</strong> shall be charged on overdues.</li>
+        <li>Any discrepancies should be informed within <strong>7 days</strong>
+            of receiving this letter.</li>
+      </ol>
+    </div>"""
+
+    # ── Assemble the full AR page ──────────────────────────────────────────
+    return """
+<div class="page" style="page-break-before:always;">
+
+  <!-- ── AR page header: same as ledger ── -->
+  <table class="hdr" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td width="55%">
+        {logo}
+        <div class="co-name">{company_name}</div>
+        <div class="co-meta">
+          {co_addr}
+          {co_gstin}
+          {co_phone}
+          {co_email}
+        </div>
+      </td>
+      <td width="45%" style="vertical-align:top;">
+        <div class="stmt-title">Accounts Receivable</div>
+        <div class="stmt-period">As of {to_date}</div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="divider"></div>
+
+  <!-- ── Customer details (below divider, right-aligned) ── -->
+  <table class="sub-hdr" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
+    <tr>
+      <td width="50%"></td>
+      <td width="50%" style="vertical-align:top;">
+        <div class="to-label">To</div>
+        <div class="cust-name">{cust_name}</div>
+        <div class="cust-meta">
+          {cust_code_line}
+          {cust_addr}
+          {cust_gstin}
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── AR Transactions Table ── -->
+  <table class="ledger">
+    <colgroup>
+      <col style="width:72px;">
+      <col style="width:140px;">
+      <col style="width:120px;">
+      <col style="width:72px;">
+      <col style="width:90px;">
+      <col style="width:72px;">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Voucher Type</th>
+        <th>Voucher No</th>
+        <th class="r">Due Date</th>
+        <th class="r">Outstanding</th>
+        <th class="r">Ageing Days</th>
+      </tr>
+    </thead>
+    <tbody>{ar_rows}</tbody>
+  </table>
+
+  {aging_section}
+  {tnc_section}
+
+</div>""".format(
+        logo=logo_html,
+        company_name=company_doc.company_name,
+        co_addr=meta_line_fn(company_addr),
+        co_gstin=meta_line_fn("GSTIN: {}".format(co_gstin) if co_gstin else ""),
+        co_phone=meta_line_fn(company_doc.get("phone_no", "")),
+        co_email=meta_line_fn(company_doc.get("email", "")),
+        to_date=formatdate(filters.to_date),
+        cust_name=customer_doc.customer_name,
+        cust_code_line=meta_line_fn(
+            "Code: {}".format(customer_doc.name)
+            if customer_doc.name != customer_doc.customer_name else ""
+        ),
+        cust_addr=meta_line_fn(customer_addr),
+        cust_gstin=meta_line_fn("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
+        ar_rows=ar_rows_html,
+        aging_section=aging_html,
+        tnc_section=tnc_html,
+    )
 
 
 # ---------------------------------------------------------------------------
