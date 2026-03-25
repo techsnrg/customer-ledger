@@ -796,7 +796,7 @@ def _build_ar_page(ar_entries, aging, filters, currency,
     aging_html = """
     <div style="margin-top:20px;">
       <div style="font-size:12px;font-weight:bold;text-transform:uppercase;
-                  letter-spacing:.6px;margin-bottom:6px;color:#1a1a1a;">Aging Summary</div>
+                  letter-spacing:.6px;margin-bottom:6px;color:#1a1a1a;">Ageing Summary</div>
       <div style="border-top:2px solid #3498db;margin-bottom:8px;"></div>
       <table class="ledger" style="font-size:10.5px;">
         <colgroup>
@@ -809,7 +809,7 @@ def _build_ar_page(ar_entries, aging, filters, currency,
         </colgroup>
         <thead>
           <tr>
-            <th>AGING</th>
+            <th>AGEING</th>
             <th class="r">0 - 30</th>
             <th class="r">30 - 60</th>
             <th class="r">60 - 90</th>
