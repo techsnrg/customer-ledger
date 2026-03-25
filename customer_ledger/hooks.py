@@ -7,3 +7,7 @@ app_license = "MIT"
 
 after_install = "customer_ledger.setup.after_install"
 after_migrate = "customer_ledger.setup.after_migrate"
+
+doctype_js = {
+    "Customer": "public/js/customer_ledger_button.js"
+}
