@@ -368,92 +368,121 @@ def download_customer_ledger_pdf(filters, include_ar=0):
 <meta charset="utf-8">
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; padding: 0; }}
+  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; }}
   .page {{ padding: 14px 18px; }}
-  .hdr td {{ vertical-align: top; }}
-  .co-name {{ font-size: 14px; font-weight: bold; color: #1a1a1a; margin-bottom: 4px; }}
-  .co-meta {{ font-size: 10px; color: #444; line-height: 1.7; }}
-  .stmt-title {{ font-size: 16px; font-weight: bold; text-align: right; color: #1a1a1a; }}
-  .stmt-period {{ font-size: 10px; color: #555; text-align: right; margin-top: 3px; }}
-  .divider {{ border-top: 2px solid #2c3e50; margin: 10px 0; }}
-  /* ── Below-divider row: summary left, customer right ── */
-  .sub-hdr td {{ vertical-align: top; padding-bottom: 12px; }}
-  .summary {{ border: 1px solid #ccc; background: #f7f8f9;
-              padding: 8px 14px; border-radius: 4px; display: inline-block; }}
-  .summary table {{ border-collapse: collapse; font-size: 11px; }}
-  .summary td {{ padding: 3px 12px 3px 0; white-space: nowrap; }}
-  .summary td:last-child {{ text-align: right; min-width: 95px; }}
-  .summary .total-row td {{ border-top: 1px solid #aaa; font-weight: bold; padding-top: 5px; }}
-  .to-label {{ font-size: 9px; font-weight: bold; color: #888; text-transform: uppercase;
-               letter-spacing: 0.8px; text-align: right; margin-bottom: 3px; }}
-  .cust-name {{ font-size: 13px; font-weight: bold; text-align: right; color: #1a1a1a; }}
-  .cust-meta {{ font-size: 10px; color: #444; line-height: 1.7; text-align: right; margin-top: 3px; }}
+  /* ── Accent bar ── */
+  .accent-bar {{ height: 5px; background: #1d3969; margin: -14px -18px 0; }}
+  /* ── Header area ── */
+  .hdr-area {{ background: #eef1f8; margin: 0 -18px; padding: 11px 18px 10px; }}
+  .co-name {{ font-size: 14px; font-weight: bold; color: #1d3969; margin-bottom: 3px; }}
+  .co-meta {{ font-size: 10px; color: #555; line-height: 1.7; }}
+  .stmt-title {{ font-size: 17px; font-weight: bold; text-align: right; color: #1d3969; }}
+  .stmt-period {{ font-size: 10px; color: #666; text-align: right; margin-top: 3px; }}
+  /* ── Divider ── */
+  .divider {{ border-top: 2px solid #1d3969; margin: 10px 0; }}
+  /* ── Summary cards ── */
+  .cards-tbl {{ width: 100%; border-collapse: separate; border-spacing: 5px 0; }}
+  .card {{ padding: 7px 8px; border: 1px solid #dde3ee; border-radius: 3px;
+           text-align: center; vertical-align: top; white-space: nowrap; }}
+  .card-lbl {{ font-size: 8.5px; color: #777; text-transform: uppercase;
+               letter-spacing: 0.4px; display: block; margin-bottom: 4px; }}
+  .card-val {{ font-size: 12px; font-weight: bold; display: block; }}
+  /* ── Customer block ── */
+  .to-block {{ border-left: 3px solid #1d3969; padding-left: 10px; }}
+  .to-label {{ font-size: 8.5px; font-weight: bold; color: #1d3969;
+               text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }}
+  .cust-name {{ font-size: 13px; font-weight: bold; color: #1a1a1a; }}
+  .cust-meta {{ font-size: 10px; color: #555; line-height: 1.7; margin-top: 2px; }}
+  /* ── Balance banner ── */
+  .bal-banner {{ background: {bal_color}; border-radius: 3px;
+                 padding: 7px 14px; margin: 10px 0 10px; }}
+  .bal-banner td {{ color: #fff; vertical-align: middle; }}
+  .bal-banner .bb-lbl {{ font-size: 11px; opacity: 0.9; }}
+  .bal-banner .bb-amt {{ font-size: 15px; font-weight: bold; text-align: right; }}
   /* ── Ledger table ── */
   table.ledger {{ width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }}
-  table.ledger thead tr {{ background: #2c3e50; color: #fff; }}
-  table.ledger thead th {{ padding: 5px 6px; text-align: left; font-weight: 600; overflow: hidden; }}
+  table.ledger thead tr {{ background: #1d3969; color: #fff; }}
+  table.ledger thead th {{ padding: 6px 7px; text-align: left; font-weight: 600; overflow: hidden; }}
   table.ledger thead th.r {{ text-align: right; }}
-  table.ledger tbody tr:nth-child(even) {{ background: #f9f9f9; }}
-  table.ledger tbody td {{ padding: 4px 6px; border-bottom: 1px solid #eee;
+  table.ledger tbody tr:nth-child(even) {{ background: #f4f6fb; }}
+  table.ledger tbody td {{ padding: 5px 7px; border-bottom: 1px solid #e5eaf3;
                            vertical-align: top; overflow: hidden; word-wrap: break-word; }}
   table.ledger tbody td.r {{ text-align: right; white-space: nowrap; }}
-  .bold-row td {{ font-weight: bold; background: #eef0f2 !important; }}
-  .footer-bal {{ text-align: right; margin-top: 10px; font-size: 12px;
-                 font-weight: bold; color: {bal_color}; }}
+  .bold-row td {{ font-weight: bold; background: #e3e8f3 !important;
+                  border-top: 1px solid #b8c4dc; }}
 </style>
 </head>
 <body>
 <div class="page">
 
-  <!-- ── Top header: Logo+Company (left) | Title+Period (right) ── -->
-  <table class="hdr" width="100%" cellpadding="0" cellspacing="0">
-    <tr>
-      <td width="55%">
-        {logo}
-        <div class="co-name">{company_name}</div>
-        <div class="co-meta">
-          {co_addr}
-          {co_phone}
-          {co_email}
-        </div>
-      </td>
-      <td width="45%" style="vertical-align:top;">
-        <div class="stmt-title">Statement of Accounts</div>
-        <div class="stmt-period">{from_date} To {to_date}</div>
-      </td>
-    </tr>
-  </table>
+  <!-- ① Accent stripe -->
+  <div class="accent-bar"></div>
+
+  <!-- ② Header area with tinted background -->
+  <div class="hdr-area">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="55%" style="vertical-align:top;">
+          {logo}
+          <div class="co-name">{company_name}</div>
+          <div class="co-meta">
+            {co_addr}{co_phone}{co_email}
+          </div>
+        </td>
+        <td width="45%" style="vertical-align:top;">
+          <div class="stmt-title">Statement of Accounts</div>
+          <div class="stmt-period">{from_date} To {to_date}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
 
   <div class="divider"></div>
 
-  <!-- ── Below divider: Account Summary (left) | Customer details (right) ── -->
-  <table class="sub-hdr" width="100%" cellpadding="0" cellspacing="0">
+  <!-- ③ Summary cards (left) + ⑤ Customer left-border block (right) -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
     <tr>
-      <td width="45%">
-        <div class="summary">
-          <table>
-            <tr><td>Opening Balance</td><td>{open_bal}</td></tr>
-            <tr><td>Invoiced Amount</td> <td>{inv_amt}</td></tr>
-            <tr><td>Amount Received</td> <td>{rec_amt}</td></tr>
-            <tr class="total-row">
-              <td>{bal_label}</td>
-              <td style="color:{bal_color}">{bal_amt}</td>
-            </tr>
-          </table>
-        </div>
+      <td width="58%" style="vertical-align:top; padding-right:14px;">
+        <table class="cards-tbl" cellpadding="0" cellspacing="0">
+          <tr>
+            <td class="card" style="border-top:3px solid #607d8b;">
+              <span class="card-lbl">Opening Balance</span>
+              <span class="card-val" style="color:#455a64;">{open_bal}</span>
+            </td>
+            <td class="card" style="border-top:3px solid #1a56db;">
+              <span class="card-lbl">Invoiced Amount</span>
+              <span class="card-val" style="color:#1a56db;">{inv_amt}</span>
+            </td>
+            <td class="card" style="border-top:3px solid #27ae60;">
+              <span class="card-lbl">Amount Received</span>
+              <span class="card-val" style="color:#27ae60;">{rec_amt}</span>
+            </td>
+            <td class="card" style="border-top:3px solid {bal_color};">
+              <span class="card-lbl">{bal_label}</span>
+              <span class="card-val" style="color:{bal_color};">{bal_amt}</span>
+            </td>
+          </tr>
+        </table>
       </td>
-      <td width="55%" style="vertical-align:top;">
-        <div class="to-label">To</div>
-        <div class="cust-name">{cust_name}</div>
-        <div class="cust-meta">
-          {cust_code_line}
-          {cust_addr}
+      <td width="42%" style="vertical-align:top;">
+        <div class="to-block">
+          <div class="to-label">To</div>
+          <div class="cust-name">{cust_name}</div>
+          <div class="cust-meta">{cust_code_line}{cust_addr}</div>
         </div>
       </td>
     </tr>
   </table>
 
-  <!-- ── Transaction Table ──────────────────────────────────────── -->
+  <!-- ④ Balance Due hero banner -->
+  <table class="bal-banner" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td class="bb-lbl">{bal_label}</td>
+      <td class="bb-amt">{bal_amt}</td>
+    </tr>
+  </table>
+
+  <!-- Transaction Table -->
   <table class="ledger">
     <colgroup>
       <col style="width:68px;">
@@ -475,9 +504,6 @@ def download_customer_ledger_pdf(filters, include_ar=0):
     </thead>
     <tbody>{rows}</tbody>
   </table>
-
-  <!-- ── Balance Due footer ─────────────────────────────────────── -->
-  <div class="footer-bal">{bal_label}: {bal_amt}</div>
 
 </div>
 </body>
@@ -803,8 +829,8 @@ def _build_ar_page(ar_entries, aging, filters, currency,
     aging_html = """
     <div style="margin-top:20px;">
       <div style="font-size:12px;font-weight:bold;text-transform:uppercase;
-                  letter-spacing:.6px;margin-bottom:6px;color:#1a1a1a;">Ageing Summary</div>
-      <div style="border-top:2px solid #3498db;margin-bottom:8px;"></div>
+                  letter-spacing:.6px;margin-bottom:6px;color:#1d3969;">Ageing Summary</div>
+      <div style="border-top:2px solid #1d3969;margin-bottom:8px;"></div>
       <table class="ledger" style="font-size:10.5px;">
         <colgroup>
           <col style="width:28%;">
@@ -816,17 +842,17 @@ def _build_ar_page(ar_entries, aging, filters, currency,
         </colgroup>
         <thead>
           <tr>
-            <th>AGEING</th>
-            <th class="r">0 - 30</th>
-            <th class="r">30 - 60</th>
-            <th class="r">60 - 90</th>
-            <th class="r">90 - 120</th>
-            <th class="r">120+</th>
+            <th style="background:#1d3969;">AGEING</th>
+            <th class="r" style="background:#27ae60;">0 - 30</th>
+            <th class="r" style="background:#f39c12;">30 - 60</th>
+            <th class="r" style="background:#e67e22;">60 - 90</th>
+            <th class="r" style="background:#e74c3c;">90 - 120</th>
+            <th class="r" style="background:#8e1a1a;">120+</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td>Based on Due Date<br>up to {as_of}</td>
+            <td>Based on Posting Date<br>up to {as_of}</td>
             <td class="r">{b0}</td>
             <td class="r">{b30}</td>
             <td class="r">{b60}</td>
@@ -863,43 +889,40 @@ def _build_ar_page(ar_entries, aging, filters, currency,
     return """
 <div class="page" style="page-break-before:always;">
 
-  <!-- ── AR page header: same as ledger ── -->
-  <table class="hdr" width="100%" cellpadding="0" cellspacing="0">
-    <tr>
-      <td width="55%">
-        {logo}
-        <div class="co-name">{company_name}</div>
-        <div class="co-meta">
-          {co_addr}
-          {co_phone}
-          {co_email}
-        </div>
-      </td>
-      <td width="45%" style="vertical-align:top;">
-        <div class="stmt-title">Accounts Receivable</div>
-        <div class="stmt-period">As of {to_date}</div>
-      </td>
-    </tr>
-  </table>
+  <!-- ① Accent stripe -->
+  <div class="accent-bar"></div>
+
+  <!-- ② Header area with tinted background -->
+  <div class="hdr-area">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="55%" style="vertical-align:top;">
+          {logo}
+          <div class="co-name">{company_name}</div>
+          <div class="co-meta">
+            {co_addr}{co_phone}{co_email}
+          </div>
+        </td>
+        <td width="45%" style="vertical-align:top;">
+          <div class="stmt-title">Accounts Receivable</div>
+          <div class="stmt-period">As of {to_date}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
 
   <div class="divider"></div>
 
-  <!-- ── Customer details (below divider, right-aligned) ── -->
-  <table class="sub-hdr" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
-    <tr>
-      <td width="50%"></td>
-      <td width="50%" style="vertical-align:top;">
-        <div class="to-label">To</div>
-        <div class="cust-name">{cust_name}</div>
-        <div class="cust-meta">
-          {cust_code_line}
-          {cust_addr}
-        </div>
-      </td>
-    </tr>
-  </table>
+  <!-- ⑤ Customer left-border block -->
+  <div style="margin-bottom:12px;">
+    <div class="to-block">
+      <div class="to-label">To</div>
+      <div class="cust-name">{cust_name}</div>
+      <div class="cust-meta">{cust_code_line}{cust_addr}</div>
+    </div>
+  </div>
 
-  <!-- ── AR Transactions Table ── -->
+  <!-- AR Transactions Table -->
   <table class="ledger">
     <colgroup>
       <col style="width:72px;">
