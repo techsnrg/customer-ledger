@@ -394,9 +394,13 @@ def download_customer_ledger_pdf(filters, include_ar=0):
   .cust-name {{ font-size: 13px; font-weight: bold; color: #1a1a1a; }}
   .cust-meta {{ font-size: 10px; color: #555; line-height: 1.7; margin-top: 2px; }}
   /* ── Balance banner ── */
-  .bal-banner {{ background: #f8f9fc; border: 1px solid #dde3ee;
-                 border-left: 4px solid {bal_color}; border-radius: 3px;
-                 padding: 7px 14px; margin: 10px 0 10px; }}
+  .bal-banner {{ background: #f8f9fc;
+                 border-top: 1px solid #dde3ee;
+                 border-right: 1px solid #dde3ee;
+                 border-bottom: 1px solid #dde3ee;
+                 border-left: 4px solid {bal_color};
+                 border-radius: 3px;
+                 padding: 7px 14px; margin: 10px 0; }}
   .bal-banner td {{ vertical-align: middle; }}
   .bal-banner .bb-lbl {{ font-size: 11px; color: #555; }}
   .bal-banner .bb-amt {{ font-size: 15px; font-weight: bold;
@@ -505,6 +509,15 @@ def download_customer_ledger_pdf(filters, include_ar=0):
       </tr>
     </thead>
     <tbody>{rows}</tbody>
+  </table>
+
+  <!-- Balance Due summary banner (bottom) -->
+  <table class="bal-banner" width="100%" cellpadding="0" cellspacing="0"
+         style="margin-top:14px;">
+    <tr>
+      <td class="bb-lbl">{bal_label}</td>
+      <td class="bb-amt">{bal_amt}</td>
+    </tr>
   </table>
 
   {tnc}
@@ -741,7 +754,7 @@ def _build_tnc_html():
         <li>Accounts overdue above <strong>75 days</strong> shall be frozen for billing
             without prior written approval.</li>
         <li>Interest <strong>@18% p.a.</strong> shall be charged on amounts overdue beyond
-            <strong>30 days</strong>.</li>
+            <strong>75 days</strong>.</li>
         <li>Any discrepancies must be notified in <strong>writing within 7 days</strong>
             of receipt; failing which, the statement shall be deemed accepted.</li>
         <li>Payments by A/c payee Cheque / DD / NEFT / RTGS only. All payments to be made
