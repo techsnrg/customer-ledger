@@ -379,8 +379,8 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         except Exception:
             cust_gstin = ""
 
-    # ── Company CIN (standard field: company_registration; fallback: custom_cin)
-    co_cin = company_doc.get("company_registration") or company_doc.get("custom_cin") or ""
+    # ── Company GSTIN
+    co_gstin = company_doc.get("tax_id") or ""
 
     html = """<!DOCTYPE html>
 <html>
@@ -392,32 +392,27 @@ def download_customer_ledger_pdf(filters, include_ar=0):
   .page {{ padding: 14px 18px; }}
   /* ── Accent bar ── */
   .accent-bar {{ height: 5px; background: #1d3969; margin: -14px -18px 0; }}
-  /* ── Header area — white bg matching invoice ── */
-  .hdr-area {{ margin: 0 -18px; padding: 11px 18px 10px; }}
+  /* ── Header area ── */
+  .hdr-area {{ background: #eef1f8; margin: 0 -18px; padding: 11px 18px 10px; }}
   .co-name {{ font-size: 14px; font-weight: bold; color: #1d3969; margin-bottom: 3px; }}
   .co-meta {{ font-size: 10px; color: #555; line-height: 1.7; }}
-  /* ── Document type box (matches invoice CREDIT NOTE box) ── */
-  .doc-type-box {{ display: inline-block; background: #1d3969; color: #fff;
-                   font-size: 13px; font-weight: bold; letter-spacing: 0.5px;
-                   padding: 6px 18px; }}
-  .stmt-period {{ font-size: 10px; color: #666; text-align: right; margin-top: 6px; }}
+  .stmt-title {{ font-size: 17px; font-weight: bold; text-align: right; color: #1d3969; }}
+  .stmt-period {{ font-size: 10px; color: #666; text-align: right; margin-top: 3px; }}
   /* ── Divider ── */
   .divider {{ border-top: 2px solid #1d3969; margin: 10px 0; }}
-  /* ── Section header bar (matches invoice Customer Details bar) ── */
-  .sec-bar {{ background: #1d3969; color: #fff; font-size: 10px; font-weight: bold;
-              text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 10px; }}
-  /* ── Customer details box ── */
-  .cust-box {{ border: 1px solid #c8d0e0; padding: 10px 12px;
-               font-size: 10.5px; line-height: 1.7; }}
-  .cust-name {{ font-size: 13px; font-weight: bold; color: #1a1a1a; margin-bottom: 2px; }}
-  .cust-meta {{ font-size: 10px; color: #555; line-height: 1.7; }}
-  /* ── Summary cards (2 × 2 grid in right column) ── */
-  .cards-tbl {{ width: 100%; border-collapse: separate; border-spacing: 4px; }}
-  .card {{ padding: 7px 8px; border: 1px solid #dde3ee;
-           text-align: center; vertical-align: top; }}
-  .card-lbl {{ font-size: 8px; color: #777; text-transform: uppercase;
+  /* ── Summary cards ── */
+  .cards-tbl {{ width: 100%; border-collapse: separate; border-spacing: 5px 0; }}
+  .card {{ padding: 7px 8px; border: 1px solid #dde3ee; border-radius: 3px;
+           text-align: center; vertical-align: top; white-space: nowrap; }}
+  .card-lbl {{ font-size: 8.5px; color: #777; text-transform: uppercase;
                letter-spacing: 0.4px; display: block; margin-bottom: 4px; }}
-  .card-val {{ font-size: 11.5px; font-weight: bold; display: block; }}
+  .card-val {{ font-size: 12px; font-weight: bold; display: block; }}
+  /* ── Customer block ── */
+  .to-block {{ border-left: 3px solid #1d3969; padding-left: 10px; }}
+  .to-label {{ font-size: 8.5px; font-weight: bold; color: #1d3969;
+               text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }}
+  .cust-name {{ font-size: 13px; font-weight: bold; color: #1a1a1a; }}
+  .cust-meta {{ font-size: 10px; color: #555; line-height: 1.7; margin-top: 2px; }}
   /* ── Balance banner ── */
   .bal-banner {{ background: #f8f9fc; border-left: 4px solid {bal_color};
                  padding: 7px 14px; margin: 10px 0; }}
@@ -444,17 +439,19 @@ def download_customer_ledger_pdf(filters, include_ar=0):
   <!-- ① Accent stripe -->
   <div class="accent-bar"></div>
 
-  <!-- ② Header: white bg — company left, doc-type box right (invoice style) -->
+  <!-- ② Header area with tinted background -->
   <div class="hdr-area">
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
-        <td width="60%" style="vertical-align:top;">
+        <td width="55%" style="vertical-align:top;">
           {logo}
           <div class="co-name">{company_name}</div>
-          <div class="co-meta">{co_addr}{co_phone}{co_email}{co_cin_line}</div>
+          <div class="co-meta">
+            {co_addr}{co_phone}{co_email}
+          </div>
         </td>
-        <td width="40%" style="vertical-align:top; text-align:right;">
-          <div class="doc-type-box">Statement of Accounts</div>
+        <td width="45%" style="vertical-align:top;">
+          <div class="stmt-title">Statement of Accounts</div>
           <div class="stmt-period">{from_date} To {to_date}</div>
         </td>
       </tr>
@@ -463,24 +460,10 @@ def download_customer_ledger_pdf(filters, include_ar=0):
 
   <div class="divider"></div>
 
-  <!-- ③ Section bar: Customer Details (left) | Account Summary (right) -->
-  <table width="100%" cellpadding="0" cellspacing="0">
-    <tr>
-      <td width="55%" class="sec-bar">Customer Details</td>
-      <td width="45%" class="sec-bar" style="text-align:right;">Account Summary</td>
-    </tr>
-  </table>
-
-  <!-- ④ Customer box (left) + 2×2 summary cards (right) -->
+  <!-- ③ Summary cards (left) + ⑤ Customer left-border block (right) -->
   <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
     <tr>
-      <td width="55%" style="vertical-align:top; padding-right:10px; padding-top:6px;">
-        <div class="cust-box">
-          <div class="cust-name">{cust_name}</div>
-          <div class="cust-meta">{cust_code_line}{cust_addr}{cust_gstin_line}</div>
-        </div>
-      </td>
-      <td width="45%" style="vertical-align:top; padding-top:6px;">
+      <td width="58%" style="vertical-align:top; padding-right:14px;">
         <table class="cards-tbl" cellpadding="0" cellspacing="0">
           <tr>
             <td class="card" style="border-top:3px solid #607d8b;">
@@ -491,8 +474,6 @@ def download_customer_ledger_pdf(filters, include_ar=0):
               <span class="card-lbl">Invoiced Amount</span>
               <span class="card-val" style="color:#1a56db;">{inv_amt}</span>
             </td>
-          </tr>
-          <tr>
             <td class="card" style="border-top:3px solid #27ae60;">
               <span class="card-lbl">Amount Received</span>
               <span class="card-val" style="color:#27ae60;">{rec_amt}</span>
@@ -503,6 +484,13 @@ def download_customer_ledger_pdf(filters, include_ar=0):
             </td>
           </tr>
         </table>
+      </td>
+      <td width="42%" style="vertical-align:top;">
+        <div class="to-block">
+          <div class="to-label">To</div>
+          <div class="cust-name">{cust_name}</div>
+          <div class="cust-meta">{cust_code_line}{cust_addr}{cust_gstin_line}</div>
+        </div>
       </td>
     </tr>
   </table>
@@ -550,7 +538,6 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         co_addr=_meta_line(company_addr),
         co_phone=_meta_line(company_doc.get("phone_no", "")),
         co_email=_meta_line(company_doc.get("email", "")),
-        co_cin_line=_meta_line("CIN: {}".format(co_cin) if co_cin else ""),
         from_date=formatdate(filters.from_date),
         to_date=formatdate(filters.to_date),
         cust_name=customer_doc.customer_name,
@@ -955,17 +942,19 @@ def _build_ar_page(ar_entries, aging, filters, currency,
   <!-- ① Accent stripe -->
   <div class="accent-bar"></div>
 
-  <!-- ② Header: white bg — company left, doc-type box right (invoice style) -->
+  <!-- ② Header area with tinted background -->
   <div class="hdr-area">
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
-        <td width="60%" style="vertical-align:top;">
+        <td width="55%" style="vertical-align:top;">
           {logo}
           <div class="co-name">{company_name}</div>
-          <div class="co-meta">{co_addr}{co_phone}{co_email}{co_cin_line}</div>
+          <div class="co-meta">
+            {co_addr}{co_phone}{co_email}
+          </div>
         </td>
-        <td width="40%" style="vertical-align:top; text-align:right;">
-          <div class="doc-type-box">Accounts Receivable</div>
+        <td width="45%" style="vertical-align:top;">
+          <div class="stmt-title">Accounts Receivable</div>
           <div class="stmt-period">As of {to_date}</div>
         </td>
       </tr>
@@ -974,14 +963,10 @@ def _build_ar_page(ar_entries, aging, filters, currency,
 
   <div class="divider"></div>
 
-  <!-- ③ Section bar: Customer Details -->
-  <table width="100%" cellpadding="0" cellspacing="0">
-    <tr><td class="sec-bar">Customer Details</td></tr>
-  </table>
-
-  <!-- ④ Customer box -->
-  <div style="margin-bottom:12px; padding-top:6px;">
-    <div class="cust-box">
+  <!-- ⑤ Customer left-border block -->
+  <div style="margin-bottom:12px;">
+    <div class="to-block">
+      <div class="to-label">To</div>
       <div class="cust-name">{cust_name}</div>
       <div class="cust-meta">{cust_code_line}{cust_addr}{cust_gstin_line}</div>
     </div>
@@ -1019,9 +1004,6 @@ def _build_ar_page(ar_entries, aging, filters, currency,
         co_addr=meta_line_fn(company_addr),
         co_phone=meta_line_fn(company_doc.get("phone_no", "")),
         co_email=meta_line_fn(company_doc.get("email", "")),
-        co_cin_line=meta_line_fn("CIN: {}".format(
-            company_doc.get("company_registration") or company_doc.get("custom_cin") or ""
-        ) if (company_doc.get("company_registration") or company_doc.get("custom_cin")) else ""),
         to_date=formatdate(filters.to_date),
         cust_name=customer_doc.customer_name,
         cust_code_line=meta_line_fn(
