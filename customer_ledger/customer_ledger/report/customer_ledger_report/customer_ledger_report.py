@@ -347,15 +347,31 @@ def download_customer_ledger_pdf(filters):
     bal_label   = _("Balance Due") if closing >= 0 else _("Credit Balance")
     bal_color   = "#c0392b" if closing >= 0 else "#27ae60"
 
-    def _info(label, val):
-        return "<tr><td>{l}</td><td style='text-align:right'><strong>{v}</strong></td></tr>".format(
-            l=label, v=val) if val else ""
-
-    logo_html = (
-        '<img src="{}" style="max-height:60px;max-width:180px;display:block;margin-bottom:6px;">'.format(
-            company_doc.company_logo)
-        if company_doc.get("company_logo") else ""
+    # ── Logo (embedded as base64 so wkhtmltopdf / weasyprint can render it)
+    logo_src = _get_logo_base64(
+        company_doc.get("company_logo") or "/files/WhatsApp Image 2025-11-27 at 16.04.30.jpeg"
     )
+    logo_html = (
+        '<img src="{src}" style="max-height:72px;max-width:220px;'
+        'display:block;margin-bottom:8px;">'.format(src=logo_src)
+        if logo_src else ""
+    )
+
+    # ── Customer GSTIN (try tax_id, then GSTIN doctype for India GST)
+    cust_gstin = customer_doc.get("tax_id") or ""
+    if not cust_gstin:
+        cust_gstin = frappe.db.get_value(
+            "GSTIN",
+            {"party_type": "Customer", "party": filters.customer},
+            "gstin",
+        ) or ""
+
+    # ── Company GSTIN
+    co_gstin = company_doc.get("tax_id") or ""
+
+    def _meta_line(val):
+        """Return a <div> line or empty string."""
+        return "<div>{}</div>".format(val) if val else ""
 
     html = """<!DOCTYPE html>
 <html>
@@ -364,101 +380,113 @@ def download_customer_ledger_pdf(filters):
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; padding: 0; }}
-  .page {{ padding: 18px 22px; }}
-  .hdr td {{ vertical-align: top; padding-bottom: 4px; }}
-  .co-name {{ font-size: 13px; font-weight: bold; }}
-  .co-meta {{ font-size: 10px; color: #444; line-height: 1.6; margin-top: 3px; }}
-  .stmt-title {{ font-size: 15px; font-weight: bold; text-align: right; }}
+  .page {{ padding: 14px 18px; }}
+  .hdr td {{ vertical-align: top; }}
+  .co-name {{ font-size: 14px; font-weight: bold; color: #1a1a1a; margin-bottom: 4px; }}
+  .co-meta {{ font-size: 10px; color: #444; line-height: 1.7; }}
+  .stmt-title {{ font-size: 16px; font-weight: bold; text-align: right; color: #1a1a1a; }}
   .stmt-period {{ font-size: 10px; color: #555; text-align: right; margin-top: 3px; }}
-  .to-label {{ font-size: 10px; font-weight: bold; color: #888;
-               text-transform: uppercase; letter-spacing: 0.6px; }}
-  .cust-name {{ font-size: 12px; font-weight: bold; margin-top: 2px; }}
-  .cust-meta {{ font-size: 10px; color: #444; line-height: 1.6; margin-top: 2px; }}
   .divider {{ border-top: 2px solid #2c3e50; margin: 10px 0; }}
-  .summary {{ display: inline-block; border: 1px solid #ccc;
-              background: #f7f8f9; padding: 8px 14px;
-              border-radius: 4px; margin-bottom: 12px; }}
+  /* ── Below-divider row: summary left, customer right ── */
+  .sub-hdr td {{ vertical-align: top; padding-bottom: 12px; }}
+  .summary {{ border: 1px solid #ccc; background: #f7f8f9;
+              padding: 8px 14px; border-radius: 4px; display: inline-block; }}
   .summary table {{ border-collapse: collapse; font-size: 11px; }}
-  .summary td {{ padding: 2px 10px 2px 0; }}
-  .summary td:last-child {{ text-align: right; min-width: 90px; }}
-  .summary .total-row td {{ border-top: 1px solid #aaa; font-weight: bold;
-                             padding-top: 4px; margin-top: 2px; }}
-  table.ledger {{ width: 100%; border-collapse: collapse; font-size: 11px; }}
+  .summary td {{ padding: 3px 12px 3px 0; white-space: nowrap; }}
+  .summary td:last-child {{ text-align: right; min-width: 95px; }}
+  .summary .total-row td {{ border-top: 1px solid #aaa; font-weight: bold; padding-top: 5px; }}
+  .to-label {{ font-size: 9px; font-weight: bold; color: #888; text-transform: uppercase;
+               letter-spacing: 0.8px; text-align: right; margin-bottom: 3px; }}
+  .cust-name {{ font-size: 13px; font-weight: bold; text-align: right; color: #1a1a1a; }}
+  .cust-meta {{ font-size: 10px; color: #444; line-height: 1.7; text-align: right; margin-top: 3px; }}
+  /* ── Ledger table ── */
+  table.ledger {{ width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }}
   table.ledger thead tr {{ background: #2c3e50; color: #fff; }}
-  table.ledger thead th {{ padding: 6px 8px; text-align: left; font-weight: 600; }}
+  table.ledger thead th {{ padding: 5px 6px; text-align: left; font-weight: 600; overflow: hidden; }}
   table.ledger thead th.r {{ text-align: right; }}
   table.ledger tbody tr:nth-child(even) {{ background: #f9f9f9; }}
-  table.ledger tbody td {{ padding: 5px 8px; border-bottom: 1px solid #eee;
-                           vertical-align: top; }}
+  table.ledger tbody td {{ padding: 4px 6px; border-bottom: 1px solid #eee;
+                           vertical-align: top; overflow: hidden; word-wrap: break-word; }}
   table.ledger tbody td.r {{ text-align: right; white-space: nowrap; }}
   .bold-row td {{ font-weight: bold; background: #eef0f2 !important; }}
-  .footer-bal {{ text-align: right; margin-top: 12px; font-size: 12px; font-weight: bold;
-                 color: {bal_color}; }}
+  .footer-bal {{ text-align: right; margin-top: 10px; font-size: 12px;
+                 font-weight: bold; color: {bal_color}; }}
 </style>
 </head>
 <body>
 <div class="page">
 
-  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <!-- ── Top header: Logo+Company (left) | Title+Period (right) ── -->
   <table class="hdr" width="100%" cellpadding="0" cellspacing="0">
     <tr>
-      <td width="50%">
+      <td width="55%">
         {logo}
         <div class="co-name">{company_name}</div>
         <div class="co-meta">
-          {company_addr_html}
-          {gstin_html}
-          {phone_html}
-          {email_html}
+          {co_addr}
+          {co_gstin}
+          {co_phone}
+          {co_email}
         </div>
       </td>
-      <td width="50%" style="text-align:right; vertical-align:top;">
+      <td width="45%" style="vertical-align:top;">
         <div class="stmt-title">Statement of Accounts</div>
         <div class="stmt-period">{from_date} To {to_date}</div>
-        <div style="margin-top:12px;">
-          <div class="to-label">To</div>
-          <div class="cust-name">{cust_name}</div>
-          <div class="cust-meta">
-            {cust_addr_html}
-            {cust_gstin_html}
-          </div>
-        </div>
       </td>
     </tr>
   </table>
 
   <div class="divider"></div>
 
-  <!-- ── Account Summary ────────────────────────────────────────── -->
-  <div class="summary">
-    <table>
-      <tr><td>Opening Balance</td>
-          <td>{open_bal}</td></tr>
-      <tr><td>Invoiced Amount</td>
-          <td>{inv_amt}</td></tr>
-      <tr><td>Amount Received</td>
-          <td>{rec_amt}</td></tr>
-      <tr class="total-row">
-          <td>{bal_label}</td>
-          <td style="color:{bal_color}">{bal_amt}</td></tr>
-    </table>
-  </div>
+  <!-- ── Below divider: Account Summary (left) | Customer details (right) ── -->
+  <table class="sub-hdr" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td width="45%">
+        <div class="summary">
+          <table>
+            <tr><td>Opening Balance</td><td>{open_bal}</td></tr>
+            <tr><td>Invoiced Amount</td> <td>{inv_amt}</td></tr>
+            <tr><td>Amount Received</td> <td>{rec_amt}</td></tr>
+            <tr class="total-row">
+              <td>{bal_label}</td>
+              <td style="color:{bal_color}">{bal_amt}</td>
+            </tr>
+          </table>
+        </div>
+      </td>
+      <td width="55%" style="vertical-align:top;">
+        <div class="to-label">To</div>
+        <div class="cust-name">{cust_name}</div>
+        <div class="cust-meta">
+          {cust_code_line}
+          {cust_addr}
+          {cust_gstin}
+        </div>
+      </td>
+    </tr>
+  </table>
 
   <!-- ── Transaction Table ──────────────────────────────────────── -->
   <table class="ledger">
+    <colgroup>
+      <col style="width:68px;">
+      <col style="width:108px;">
+      <col>
+      <col style="width:88px;">
+      <col style="width:88px;">
+      <col style="width:88px;">
+    </colgroup>
     <thead>
       <tr>
-        <th style="width:70px;">Date</th>
-        <th style="width:110px;">Transactions</th>
+        <th>Date</th>
+        <th>Transactions</th>
         <th>Details</th>
-        <th class="r" style="width:90px;">Amount</th>
-        <th class="r" style="width:90px;">Payments</th>
-        <th class="r" style="width:90px;">Balance</th>
+        <th class="r">Amount</th>
+        <th class="r">Payments</th>
+        <th class="r">Balance</th>
       </tr>
     </thead>
-    <tbody>
-      {rows}
-    </tbody>
+    <tbody>{rows}</tbody>
   </table>
 
   <!-- ── Balance Due footer ─────────────────────────────────────── -->
@@ -470,15 +498,17 @@ def download_customer_ledger_pdf(filters):
         bal_color=bal_color,
         logo=logo_html,
         company_name=company_doc.company_name,
-        company_addr_html=company_addr or "",
-        gstin_html="GSTIN: {}".format(company_doc.get("tax_id")) if company_doc.get("tax_id") else "",
-        phone_html=company_doc.get("phone_no", ""),
-        email_html=company_doc.get("email", ""),
+        co_addr=_meta_line(company_addr),
+        co_gstin=_meta_line("GSTIN: {}".format(co_gstin) if co_gstin else ""),
+        co_phone=_meta_line(company_doc.get("phone_no", "")),
+        co_email=_meta_line(company_doc.get("email", "")),
         from_date=formatdate(filters.from_date),
         to_date=formatdate(filters.to_date),
         cust_name=customer_doc.customer_name,
-        cust_addr_html=customer_addr or "",
-        cust_gstin_html="GSTIN: {}".format(customer_doc.get("tax_id")) if customer_doc.get("tax_id") else "",
+        cust_code_line=_meta_line("Code: {}".format(customer_doc.name)
+                                   if customer_doc.name != customer_doc.customer_name else ""),
+        cust_addr=_meta_line(customer_addr),
+        cust_gstin=_meta_line("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
         open_bal=_fmt(opening_balance, currency),
         inv_amt=_fmt(total_inv, currency),
         rec_amt=_fmt(total_rec, currency),
@@ -488,8 +518,8 @@ def download_customer_ledger_pdf(filters):
     )
 
     pdf = get_pdf(html, {"page-size": "A4", "orientation": "Portrait",
-                         "margin-top": "10mm", "margin-bottom": "10mm",
-                         "margin-left": "12mm", "margin-right": "12mm"})
+                         "margin-top": "8mm", "margin-bottom": "8mm",
+                         "margin-left": "8mm", "margin-right": "8mm"})
 
     fname = "Ledger_{}_{}_to_{}.pdf".format(
         customer_doc.customer_name.replace(" ", "_"),
@@ -565,3 +595,50 @@ def _get_currency(filters):
     if filters.get("currency"):
         return filters.currency
     return frappe.db.get_value("Company", filters.get("company"), "default_currency") or "INR"
+
+
+# ---------------------------------------------------------------------------
+# Logo helper — resolves /files/... → filesystem path → base64 data URI
+# ---------------------------------------------------------------------------
+
+def _get_logo_base64(logo_url):
+    """
+    Given a Frappe file URL like '/files/logo.png', resolve it to the
+    site's filesystem path, read the bytes and return a data-URI string
+    suitable for embedding in HTML (so wkhtmltopdf/weasyprint can render it
+    without needing HTTP access).
+
+    Returns an empty string if the file cannot be found or read.
+    """
+    import base64
+    import mimetypes
+    import os
+
+    if not logo_url:
+        return ""
+
+    # Strip query-string / fragment if any
+    clean_url = logo_url.split("?")[0].split("#")[0]
+
+    # Build absolute filesystem path inside the Frappe site
+    site_path = frappe.get_site_path()
+    # Frappe stores /files/... under <site>/public/files/
+    if clean_url.startswith("/files/"):
+        file_path = os.path.join(site_path, "public", clean_url.lstrip("/"))
+    elif clean_url.startswith("/private/files/"):
+        file_path = os.path.join(site_path, clean_url.lstrip("/"))
+    else:
+        return ""
+
+    if not os.path.isfile(file_path):
+        return ""
+
+    try:
+        with open(file_path, "rb") as fh:
+            raw = fh.read()
+        mime, _ = mimetypes.guess_type(file_path)
+        mime = mime or "image/jpeg"
+        b64 = base64.b64encode(raw).decode("ascii")
+        return "data:{};base64,{}".format(mime, b64)
+    except Exception:
+        return ""
