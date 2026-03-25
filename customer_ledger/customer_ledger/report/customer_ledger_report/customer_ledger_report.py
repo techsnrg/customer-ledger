@@ -289,13 +289,14 @@ def _build_summary_cards(filters, data):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def download_customer_ledger_pdf(filters):
+def download_customer_ledger_pdf(filters, include_ar=0):
     from frappe.utils.pdf import get_pdf
 
     if isinstance(filters, str):
         filters = frappe._dict(json.loads(filters))
     else:
         filters = frappe._dict(filters or {})
+    include_ar = cint(include_ar)
 
     _validate_filters(filters)
 
@@ -526,22 +527,25 @@ def download_customer_ledger_pdf(filters):
         rows=rows_html,
     )
 
-    # ── Page 2: Accounts Receivable ────────────────────────────────
-    ar_entries = _get_ar_entries(filters)
-    aging      = _build_ar_aging(ar_entries)
-    ar_page    = _build_ar_page(
-        ar_entries, aging, filters, currency,
-        logo_html, company_doc, customer_doc,
-        company_addr, customer_addr, cust_gstin, co_gstin,
-        _meta_line,
-    )
-    html = html.replace("</div>\n</body>", "</div>\n" + ar_page + "\n</body>")
+    # ── Page 2: Accounts Receivable (only when requested) ──────────
+    if include_ar:
+        ar_entries = _get_ar_entries(filters)
+        aging      = _build_ar_aging(ar_entries)
+        ar_page    = _build_ar_page(
+            ar_entries, aging, filters, currency,
+            logo_html, company_doc, customer_doc,
+            company_addr, customer_addr, cust_gstin, co_gstin,
+            _meta_line,
+        )
+        html = html.replace("</div>\n</body>", "</div>\n" + ar_page + "\n</body>")
 
     pdf = get_pdf(html, {"page-size": "A4", "orientation": "Portrait",
                          "margin-top": "8mm", "margin-bottom": "8mm",
                          "margin-left": "8mm", "margin-right": "8mm"})
 
-    fname = "Statement_{}_{}_to_{}.pdf".format(
+    prefix = "Statement" if include_ar else "Ledger"
+    fname = "{}_{}_{}_to_{}.pdf".format(
+        prefix,
         customer_doc.customer_name.replace(" ", "_"),
         filters.from_date, filters.to_date,
     )

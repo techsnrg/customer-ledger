@@ -82,7 +82,7 @@ frappe.query_reports["Customer Ledger Report"] = {
 			});
 		}, 500);
 
-		// Export Ledger — downloads a clean PDF matching the vendor statement format
+		// Export Ledger — ledger only (Page 1)
 		report.page.add_inner_button(__("Export Ledger"), function () {
 			var filters = report.get_filter_values();
 			if (!filters || !filters.customer) {
@@ -92,7 +92,22 @@ frappe.query_reports["Customer Ledger Report"] = {
 			var url = frappe.urllib.get_full_url(
 				"/api/method/customer_ledger.customer_ledger.report" +
 				".customer_ledger_report.customer_ledger_report.download_customer_ledger_pdf?" +
-				$.param({ filters: JSON.stringify(filters) })
+				$.param({ filters: JSON.stringify(filters), include_ar: 0 })
+			);
+			window.open(url);
+		});
+
+		// Export Ledger + AR — ledger + accounts receivable + aging + T&C (Page 1 + 2)
+		report.page.add_inner_button(__("Export Ledger + AR"), function () {
+			var filters = report.get_filter_values();
+			if (!filters || !filters.customer) {
+				frappe.msgprint(__("Please select a Customer before exporting."));
+				return;
+			}
+			var url = frappe.urllib.get_full_url(
+				"/api/method/customer_ledger.customer_ledger.report" +
+				".customer_ledger_report.customer_ledger_report.download_customer_ledger_pdf?" +
+				$.param({ filters: JSON.stringify(filters), include_ar: 1 })
 			);
 			window.open(url);
 		});
