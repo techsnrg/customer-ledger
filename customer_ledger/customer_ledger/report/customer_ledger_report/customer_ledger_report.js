@@ -82,64 +82,55 @@ frappe.query_reports["Customer Ledger Report"] = {
 			});
 		}, 500);
 
-		// Export Ledger — ledger only (Page 1)
-		report.page.add_inner_button(__("Export Ledger"), function () {
+		function _getFilters(action) {
 			var filters = report.get_filter_values();
 			if (!filters || !filters.customer) {
-				frappe.msgprint(__("Please select a Customer before exporting."));
-				return;
+				frappe.msgprint(__("Please select a Customer before " + action + "."));
+				return null;
 			}
+			return filters;
+		}
+
+		function _exportPdf(include_ar) {
+			var filters = _getFilters("exporting");
+			if (!filters) return;
 			var url = frappe.urllib.get_full_url(
 				"/api/method/customer_ledger.customer_ledger.report" +
 				".customer_ledger_report.customer_ledger_report.download_customer_ledger_pdf?" +
-				$.param({ filters: JSON.stringify(filters), include_ar: 0 })
+				$.param({ filters: JSON.stringify(filters), include_ar: include_ar })
 			);
 			window.open(url);
-		});
+		}
 
-		// Export Ledger + AR — ledger + accounts receivable + aging + T&C (Page 1 + 2)
-		report.page.add_inner_button(__("Export Ledger + AR"), function () {
-			var filters = report.get_filter_values();
-			if (!filters || !filters.customer) {
-				frappe.msgprint(__("Please select a Customer before exporting."));
-				return;
-			}
-			var url = frappe.urllib.get_full_url(
-				"/api/method/customer_ledger.customer_ledger.report" +
-				".customer_ledger_report.customer_ledger_report.download_customer_ledger_pdf?" +
-				$.param({ filters: JSON.stringify(filters), include_ar: 1 })
-			);
-			window.open(url);
-		});
+		function _emailLedger(include_ar) {
+			var filters = _getFilters("emailing");
+			if (!filters) return;
+			var msg = include_ar
+				? __("Send Ledger + AR statement to the customer's email address?")
+				: __("Send Ledger statement to the customer's email address?");
+			frappe.confirm(msg, function () {
+				frappe.call({
+					method: "customer_ledger.customer_ledger.report" +
+						".customer_ledger_report.customer_ledger_report.email_customer_ledger",
+					args: { filters: JSON.stringify(filters), include_ar: include_ar },
+					freeze: true,
+					freeze_message: __("Sending email…"),
+					callback: function (r) {
+						if (r.message) {
+							frappe.show_alert({ message: __(r.message.message), indicator: "green" });
+						}
+					},
+				});
+			});
+		}
 
-		// Email Ledger + AR to customer's primary email
-		report.page.add_inner_button(__("Email to Customer"), function () {
-			var filters = report.get_filter_values();
-			if (!filters || !filters.customer) {
-				frappe.msgprint(__("Please select a Customer before emailing."));
-				return;
-			}
-			frappe.confirm(
-				__("Send Ledger + AR statement to the customer's email address?"),
-				function () {
-					frappe.call({
-						method: "customer_ledger.customer_ledger.report" +
-							".customer_ledger_report.customer_ledger_report.email_customer_ledger",
-						args: { filters: JSON.stringify(filters), include_ar: 1 },
-						freeze: true,
-						freeze_message: __("Sending email…"),
-						callback: function (r) {
-							if (r.message) {
-								frappe.show_alert({
-									message: __(r.message.message),
-									indicator: "green",
-								});
-							}
-						},
-					});
-				}
-			);
-		});
+		// ── Export Ledger dropdown ──────────────────────────────────────────
+		report.page.add_inner_button(__("Export Ledger"),       function () { _exportPdf(0); }, __("Export Ledger"));
+		report.page.add_inner_button(__("Export Ledger + AR"),  function () { _exportPdf(1); }, __("Export Ledger"));
+
+		// ── Email Ledger dropdown ───────────────────────────────────────────
+		report.page.add_inner_button(__("Email Ledger"),        function () { _emailLedger(0); }, __("Email Ledger"));
+		report.page.add_inner_button(__("Email Ledger + AR"),   function () { _emailLedger(1); }, __("Email Ledger"));
 	},
 
 	formatter: function (value, row, column, data, default_formatter) {
