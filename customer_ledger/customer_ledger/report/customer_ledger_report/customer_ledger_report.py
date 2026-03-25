@@ -394,12 +394,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
   .cust-name {{ font-size: 13px; font-weight: bold; color: #1a1a1a; }}
   .cust-meta {{ font-size: 10px; color: #555; line-height: 1.7; margin-top: 2px; }}
   /* ── Balance banner ── */
-  .bal-banner {{ background: #f8f9fc;
-                 border-top: 1px solid #dde3ee;
-                 border-right: 1px solid #dde3ee;
-                 border-bottom: 1px solid #dde3ee;
-                 border-left: 4px solid {bal_color};
-                 border-radius: 3px;
+  .bal-banner {{ background: #f8f9fc; border-left: 4px solid {bal_color};
                  padding: 7px 14px; margin: 10px 0; }}
   .bal-banner td {{ vertical-align: middle; }}
   .bal-banner .bb-lbl {{ font-size: 11px; color: #555; }}
@@ -477,14 +472,6 @@ def download_customer_ledger_pdf(filters, include_ar=0):
           <div class="cust-meta">{cust_code_line}{cust_addr}</div>
         </div>
       </td>
-    </tr>
-  </table>
-
-  <!-- ④ Balance Due hero banner -->
-  <table class="bal-banner" width="100%" cellpadding="0" cellspacing="0">
-    <tr>
-      <td class="bb-lbl">{bal_label}</td>
-      <td class="bb-amt">{bal_amt}</td>
     </tr>
   </table>
 
