@@ -407,14 +407,12 @@ def download_customer_ledger_pdf(filters, include_ar=0):
   .card-lbl {{ font-size: 8.5px; color: #777; text-transform: uppercase;
                letter-spacing: 0.4px; display: block; margin-bottom: 4px; }}
   .card-val {{ font-size: 12px; font-weight: bold; display: block; }}
-  /* ── Customer block — typography from Sales Invoice print format ── */
+  /* ── Customer block ── */
   .to-block {{ border-left: 3px solid #1d3969; padding-left: 10px; }}
   .to-label {{ font-size: 8.5px; font-weight: bold; color: #1d3969;
                text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }}
-  .party-code-head {{ font-size: 18px; line-height: 1.12; font-weight: 700;
-                      color: #173a5e; margin-bottom: 4px; }}
   .party-name {{ font-size: 16px; line-height: 1.15; font-weight: 700;
-                 color: #22384f; margin-bottom: 6px; }}
+                 color: #22384f; margin-bottom: 4px; }}
   .cust-meta {{ font-size: 10px; color: #555; line-height: 1.7; margin-top: 2px; }}
   /* ── Balance banner ── */
   .bal-banner {{ background: #f8f9fc; border-left: 4px solid {bal_color};
@@ -491,9 +489,9 @@ def download_customer_ledger_pdf(filters, include_ar=0):
       <td width="42%" style="vertical-align:top;">
         <div class="to-block">
           <div class="to-label">To</div>
-          <div class="party-code-head">{cust_code_head}</div>
+          <div class="party-name">{cust_code_head}</div>
           <div class="party-name">{cust_name}</div>
-          <div class="cust-meta">{cust_addr}{cust_gstin_line}</div>
+          <div class="cust-meta">{cust_mobile}{cust_addr}{cust_gstin_line}</div>
         </div>
       </td>
     </tr>
@@ -548,6 +546,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         cust_code_head=(customer_doc.name
                         if customer_doc.name != customer_doc.customer_name
                         else customer_doc.customer_name),
+        cust_mobile=_meta_line(customer_doc.get("custom_mobile_number") or ""),
         cust_addr=_meta_line(customer_addr),
         cust_gstin_line=_meta_line("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
         open_bal=_fmt(opening_balance, currency),
@@ -972,9 +971,9 @@ def _build_ar_page(ar_entries, aging, filters, currency,
   <div style="margin-bottom:12px;">
     <div class="to-block">
       <div class="to-label">To</div>
-      <div class="party-code-head">{cust_code_head}</div>
+      <div class="party-name">{cust_code_head}</div>
       <div class="party-name">{cust_name}</div>
-      <div class="cust-meta">{cust_addr}{cust_gstin_line}</div>
+      <div class="cust-meta">{cust_mobile}{cust_addr}{cust_gstin_line}</div>
     </div>
   </div>
 
@@ -1015,6 +1014,7 @@ def _build_ar_page(ar_entries, aging, filters, currency,
         cust_code_head=(customer_doc.name
                         if customer_doc.name != customer_doc.customer_name
                         else customer_doc.customer_name),
+        cust_mobile=meta_line_fn(customer_doc.get("custom_mobile_number") or ""),
         cust_addr=meta_line_fn(customer_addr),
         cust_gstin_line=meta_line_fn("GSTIN: {}".format(customer_doc.get("tax_id")) if customer_doc.get("tax_id") else ""),
         ar_rows=ar_rows_html,
