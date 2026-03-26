@@ -142,12 +142,18 @@ def _get_gl_entries(filters):
         """
         SELECT
             gle.posting_date, gle.account, gle.voucher_type,
-            MAX(gle.voucher_subtype)           AS voucher_subtype,
+            CASE
+                WHEN gle.voucher_type = 'Sales Invoice' AND MAX(si.is_return) = 1
+                THEN CONCAT('Credit Note', IF(MAX(IFNULL(si.custom_reason,'')) != '', CONCAT(' (', MAX(IFNULL(si.custom_reason,'')), ')'), ''))
+                ELSE MAX(gle.voucher_subtype)
+            END                                AS voucher_subtype,
             gle.voucher_no,
             MAX(gle.remarks)                   AS remarks,
             SUM(gle.debit_in_account_currency) AS debit,
             SUM(gle.credit_in_account_currency)AS credit
         FROM `tabGL Entry` gle
+        LEFT JOIN `tabSales Invoice` si
+            ON si.name = gle.voucher_no AND gle.voucher_type = 'Sales Invoice'
         WHERE gle.company    = %(company)s
           AND gle.party_type = 'Customer'
           AND gle.party      = %(customer)s
@@ -825,7 +831,10 @@ def _get_ar_entries(filters):
             si.posting_date,
             si.name                                                      AS voucher_no,
             'Sales Invoice'                                              AS voucher_type,
-            CASE WHEN si.is_return = 1 THEN 'Credit Note' ELSE 'Invoice' END AS voucher_subtype,
+            CASE WHEN si.is_return = 1
+                 THEN CONCAT('Credit Note', IF(IFNULL(si.custom_reason,'') != '', CONCAT(' (', si.custom_reason, ')'), ''))
+                 ELSE 'Invoice'
+            END AS voucher_subtype,
             si.grand_total                                               AS invoiced_amount,
             si.outstanding_amount,
             DATEDIFF(%(to_date)s, si.posting_date)                       AS ageing_days
