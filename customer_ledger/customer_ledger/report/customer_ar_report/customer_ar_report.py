@@ -1,15 +1,15 @@
 import frappe
-from frappe.utils import flt, formatdate
+from frappe.utils import flt
 
 from customer_ledger.customer_ledger.report.customer_ledger_report.customer_ledger_report import (
     _get_ar_entries,
-    _build_ar_aging,
     _fmt,
     _get_currency,
 )
 
 
 def get_columns():
+    cur = {"fieldtype": "Currency", "options": "currency", "width": 130}
     return [
         {
             "label": "Date",
@@ -27,28 +27,28 @@ def get_columns():
             "label": "Subtype",
             "fieldname": "voucher_subtype",
             "fieldtype": "Data",
-            "width": 110,
+            "width": 100,
         },
         {
             "label": "Voucher No",
             "fieldname": "voucher_no",
             "fieldtype": "Dynamic Link",
             "options": "voucher_type",
-            "width": 200,
+            "width": 190,
         },
-        {
-            "label": "Outstanding Amount",
-            "fieldname": "outstanding_amount",
-            "fieldtype": "Currency",
-            "options": "currency",
-            "width": 140,
-        },
+        dict(label="Invoiced Amount",   fieldname="invoiced_amount",   **cur),
+        dict(label="Outstanding Amount", fieldname="outstanding_amount", **cur),
         {
             "label": "Ageing Days",
             "fieldname": "ageing_days",
             "fieldtype": "Int",
-            "width": 110,
+            "width": 100,
         },
+        dict(label="0 - 30",  fieldname="b0",  **cur),
+        dict(label="31 - 60", fieldname="b31", **cur),
+        dict(label="61 - 75", fieldname="b61", **cur),
+        dict(label="76 - 90", fieldname="b76", **cur),
+        dict(label="90+",     fieldname="b90", **cur),
         {
             "label": "Currency",
             "fieldname": "currency",
@@ -58,6 +58,20 @@ def get_columns():
             "hidden": 1,
         },
     ]
+
+
+def _bucket_key(days):
+    """Return the bucket fieldname for a given ageing-days value."""
+    if days <= 30:
+        return "b0"
+    elif days <= 60:
+        return "b31"
+    elif days <= 75:
+        return "b61"
+    elif days <= 90:
+        return "b76"
+    else:
+        return "b90"
 
 
 def execute(filters=None):
@@ -73,64 +87,59 @@ def execute(filters=None):
     ar_entries = _get_ar_entries(filters) if filters.get("customer") else []
 
     data = []
-    total_outstanding = 0.0
+
+    # Running totals
+    total_invoiced     = 0.0
+    total_outstanding  = 0.0
+    bucket_totals      = {"b0": 0.0, "b31": 0.0, "b61": 0.0, "b76": 0.0, "b90": 0.0}
 
     for e in ar_entries:
-        amt = flt(e.outstanding_amount)
-        total_outstanding += amt
-        data.append(
-            frappe._dict(
-                posting_date=e.posting_date,
-                voucher_type=e.voucher_type,
-                voucher_subtype=e.voucher_subtype or "",
-                voucher_no=e.voucher_no,
-                outstanding_amount=amt,
-                ageing_days=int(e.ageing_days or 0),
-                currency=currency,
-            )
+        inv_amt = flt(e.invoiced_amount)
+        out_amt = flt(e.outstanding_amount)
+        days    = int(e.ageing_days or 0)
+        bkey    = _bucket_key(days)
+
+        total_invoiced    += inv_amt
+        total_outstanding += out_amt
+        bucket_totals[bkey] += out_amt
+
+        row = frappe._dict(
+            posting_date      = e.posting_date,
+            voucher_type      = e.voucher_type,
+            voucher_subtype   = e.voucher_subtype or "",
+            voucher_no        = e.voucher_no,
+            invoiced_amount   = inv_amt,
+            outstanding_amount= out_amt,
+            ageing_days       = days,
+            b0  = out_amt if bkey == "b0"  else 0.0,
+            b31 = out_amt if bkey == "b31" else 0.0,
+            b61 = out_amt if bkey == "b61" else 0.0,
+            b76 = out_amt if bkey == "b76" else 0.0,
+            b90 = out_amt if bkey == "b90" else 0.0,
+            currency          = currency,
         )
+        data.append(row)
 
     # ── Totals row ──────────────────────────────────────────────────────────
     if data:
         data.append(
             frappe._dict(
-                posting_date=None,
-                voucher_type="",
-                voucher_subtype="",
-                voucher_no="Total Outstanding",
-                outstanding_amount=total_outstanding,
-                ageing_days=None,
-                currency=currency,
-                is_total=1,
+                posting_date      = None,
+                voucher_type      = "",
+                voucher_subtype   = "",
+                voucher_no        = "Total Outstanding",
+                invoiced_amount   = total_invoiced,
+                outstanding_amount= total_outstanding,
+                ageing_days       = None,
+                b0  = bucket_totals["b0"],
+                b31 = bucket_totals["b31"],
+                b61 = bucket_totals["b61"],
+                b76 = bucket_totals["b76"],
+                b90 = bucket_totals["b90"],
+                currency          = currency,
+                is_total          = 1,
             )
         )
-
-    # ── Ageing summary rows ─────────────────────────────────────────────────
-    if ar_entries:
-        aging = _build_ar_aging(ar_entries)
-        data.append(frappe._dict(voucher_no="", is_section_break=1))
-        data.append(frappe._dict(voucher_no="── AGEING SUMMARY ──", is_section_break=1))
-
-        bucket_labels = [
-            ("b0",  "0 - 30 days"),
-            ("b31", "31 - 60 days"),
-            ("b61", "61 - 75 days"),
-            ("b76", "76 - 90 days"),
-            ("b90", "90+ days"),
-        ]
-        for key, label in bucket_labels:
-            data.append(
-                frappe._dict(
-                    posting_date=None,
-                    voucher_type="",
-                    voucher_subtype="",
-                    voucher_no=label,
-                    outstanding_amount=aging[key],
-                    ageing_days=None,
-                    currency=currency,
-                    is_aging_row=1,
-                )
-            )
 
     columns = get_columns()
     return columns, data

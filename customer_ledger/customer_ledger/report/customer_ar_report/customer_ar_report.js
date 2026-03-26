@@ -117,18 +117,8 @@ frappe.query_reports["Customer AR Report"] = {
 			value = "<strong>" + value + "</strong>";
 		}
 
-		// Section break / ageing header rows — muted italic
-		if (data.is_section_break) {
-			value = "<span style='color:#888;font-style:italic;'>" + (value || "") + "</span>";
-		}
-
-		// Ageing bucket rows — indent + label styling
-		if (data.is_aging_row && column.fieldname === "voucher_no") {
-			value = "<span style='color:#555;padding-left:12px;'>" + (value || "") + "</span>";
-		}
-
-		// Ageing days — colour by severity (matches bucket thresholds)
-		if (column.fieldname === "ageing_days" && data.ageing_days != null) {
+		// Ageing days — colour by severity
+		if (column.fieldname === "ageing_days" && data.ageing_days != null && !data.is_total) {
 			var days = data.ageing_days;
 			var color = days <= 30  ? "#27ae60"
 					  : days <= 60  ? "#f39c12"
@@ -136,6 +126,12 @@ frappe.query_reports["Customer AR Report"] = {
 					  : days <= 90  ? "#e74c3c"
 					  : "#8e1a1a";
 			value = "<span style='color:" + color + ";font-weight:600;'>" + days + " days</span>";
+		}
+
+		// Bucket columns — colour header matches ageing severity, skip total row styling
+		var bucketColors = { b0: "#27ae60", b31: "#f39c12", b61: "#e67e22", b76: "#e74c3c", b90: "#8e1a1a" };
+		if (bucketColors[column.fieldname] && !data.is_total && value && value !== "0.00" && value !== "₹ 0.00") {
+			value = "<span style='color:" + bucketColors[column.fieldname] + ";font-weight:600;'>" + value + "</span>";
 		}
 
 		return value;
