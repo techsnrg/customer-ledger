@@ -345,7 +345,7 @@ def _make_html_doc(css, page_divs):
 
 
 def _build_ledger_page_div(
-    logo_html, company_doc, customer_doc, customer_addr,
+    logo_html, company_doc, company_addr, customer_doc, customer_addr,
     cust_gstin, filters, currency, rows_html,
     opening_balance, total_inv, total_rec, closing,
     bal_color, bal_label, meta_line_fn,
@@ -579,7 +579,7 @@ def download_customer_ledger_pdf(filters, include_ar=0, include_ledger=1):
     if include_ledger:
         page_divs.append(
             _build_ledger_page_div(
-                logo_html, company_doc, customer_doc, customer_addr,
+                logo_html, company_doc, company_addr, customer_doc, customer_addr,
                 cust_gstin, filters, currency, rows_html,
                 opening_balance, total_inv, total_rec, closing,
                 bal_color, bal_label, _meta_line,
