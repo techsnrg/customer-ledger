@@ -825,7 +825,7 @@ def _get_ar_entries(filters):
             si.posting_date,
             si.name                                                      AS voucher_no,
             'Sales Invoice'                                              AS voucher_type,
-            CASE WHEN si.is_return = 1 THEN 'Credit Note' ELSE '' END   AS voucher_subtype,
+            CASE WHEN si.is_return = 1 THEN 'Credit Note' ELSE 'Invoice' END AS voucher_subtype,
             si.grand_total                                               AS invoiced_amount,
             si.outstanding_amount,
             DATEDIFF(%(to_date)s, si.posting_date)                       AS ageing_days
