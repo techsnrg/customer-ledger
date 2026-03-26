@@ -294,18 +294,208 @@ def _build_summary_cards(filters, data):
 
 
 # ---------------------------------------------------------------------------
+# Shared PDF helpers
+# ---------------------------------------------------------------------------
+
+def _get_pdf_css(bal_color):
+    """Return the shared CSS used by all PDF pages.
+    Uses __BAL__ placeholder so we don't need Python {{}} escaping."""
+    return """
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; }
+  .page { padding: 14px 18px; }
+  .accent-bar { height: 5px; background: #1d3969; margin: -14px -18px 0; }
+  .hdr-area { background: #eef1f8; margin: 0 -18px; padding: 11px 18px 10px; }
+  .co-name { font-size: 14px; font-weight: bold; color: #1d3969; margin-bottom: 3px; }
+  .co-meta { font-size: 10px; color: #555; line-height: 1.7; }
+  .stmt-title { font-size: 17px; font-weight: bold; text-align: right; color: #1d3969; }
+  .stmt-period { font-size: 10px; color: #666; text-align: right; margin-top: 3px; }
+  .divider { border-top: 2px solid #1d3969; margin: 10px 0; }
+  .cards-tbl { width: 100%; border-collapse: separate; border-spacing: 5px 0; }
+  .card { padding: 7px 8px; border: 1px solid #dde3ee; border-radius: 3px;
+          text-align: center; vertical-align: top; white-space: nowrap; }
+  .card-lbl { font-size: 8.5px; color: #777; text-transform: uppercase;
+              letter-spacing: 0.4px; display: block; margin-bottom: 4px; }
+  .card-val { font-size: 12px; font-weight: bold; display: block; }
+  .to-block { border-left: 3px solid #1d3969; padding-left: 10px; }
+  .to-label { font-size: 8.5px; font-weight: bold; color: #1d3969;
+              text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
+  .party-name { font-size: 16px; line-height: 1.15; font-weight: 700;
+                color: #22384f; margin-bottom: 4px; }
+  .cust-meta { font-size: 10px; color: #555; line-height: 1.7; margin-top: 2px; }
+  .bal-banner { background: #f8f9fc; border-left: 4px solid __BAL__;
+                padding: 7px 14px; margin: 10px 0; }
+  .bal-banner td { vertical-align: middle; }
+  .bal-banner .bb-lbl { font-size: 11px; color: #555; }
+  .bal-banner .bb-amt { font-size: 15px; font-weight: bold;
+                        text-align: right; color: __BAL__; }
+  table.ledger { width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
+  table.ledger thead tr { background: #1d3969; color: #fff; }
+  table.ledger thead th { padding: 6px 7px; text-align: left; font-weight: 600; overflow: hidden; }
+  table.ledger thead th.r { text-align: right; }
+  table.ledger tbody tr:nth-child(even) { background: #f4f6fb; }
+  table.ledger tbody td { padding: 5px 7px; border-bottom: 1px solid #e5eaf3;
+                          vertical-align: top; overflow: hidden; word-wrap: break-word; }
+  table.ledger tbody td.r { text-align: right; white-space: nowrap; }
+  .bold-row td { font-weight: bold; background: #e3e8f3 !important;
+                 border-top: 1px solid #b8c4dc; }
+""".replace("__BAL__", bal_color)
+
+
+def _make_html_doc(css, page_divs):
+    """Wrap one or more page <div>s in a complete HTML document."""
+    return (
+        '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<style>'
+        + css
+        + "</style>\n</head>\n<body>\n"
+        + "\n".join(page_divs)
+        + "\n</body>\n</html>"
+    )
+
+
+def _build_ledger_page_div(
+    logo_html, company_doc, company_addr, customer_doc, customer_addr,
+    cust_gstin, filters, currency, rows_html,
+    opening_balance, total_inv, total_rec, closing,
+    bal_color, bal_label, meta_line_fn,
+):
+    """Return the ledger <div class='page'> fragment (no html/head/body tags)."""
+    cust_code = customer_doc.name
+    cust_name = customer_doc.customer_name
+    # Only show code row if it differs from the name
+    cust_code_head = cust_code if cust_code != cust_name else ""
+
+    return """
+<div class="page">
+
+  <!-- ① Accent stripe -->
+  <div class="accent-bar"></div>
+
+  <!-- ② Header -->
+  <div class="hdr-area">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="55%" style="vertical-align:top;">
+          {logo}
+          <div class="co-name">{company_name}</div>
+          <div class="co-meta">{co_addr}{co_phone}{co_email}</div>
+        </td>
+        <td width="45%" style="vertical-align:top;">
+          <div class="stmt-title">Statement of Accounts</div>
+          <div class="stmt-period">{from_date} To {to_date}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ③ Summary cards + Customer block -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
+    <tr>
+      <td width="58%" style="vertical-align:top; padding-right:14px;">
+        <table class="cards-tbl" cellpadding="0" cellspacing="0">
+          <tr>
+            <td class="card" style="border-top:3px solid #607d8b;">
+              <span class="card-lbl">Opening Balance</span>
+              <span class="card-val" style="color:#455a64;">{open_bal}</span>
+            </td>
+            <td class="card" style="border-top:3px solid #1a56db;">
+              <span class="card-lbl">Invoiced Amount</span>
+              <span class="card-val" style="color:#1a56db;">{inv_amt}</span>
+            </td>
+            <td class="card" style="border-top:3px solid #27ae60;">
+              <span class="card-lbl">Amount Received</span>
+              <span class="card-val" style="color:#27ae60;">{rec_amt}</span>
+            </td>
+            <td class="card" style="border-top:3px solid {bal_color};">
+              <span class="card-lbl">{bal_label}</span>
+              <span class="card-val" style="color:{bal_color};">{bal_amt}</span>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td width="42%" style="vertical-align:top;">
+        <div class="to-block">
+          <div class="to-label">To</div>
+          {cust_code_line}
+          <div class="party-name">{cust_name}</div>
+          <div class="cust-meta">{cust_mobile}{cust_addr}{cust_gstin_line}</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Transaction Table -->
+  <table class="ledger">
+    <colgroup>
+      <col style="width:78px;">
+      <col style="width:108px;">
+      <col>
+      <col style="width:88px;">
+      <col style="width:88px;">
+      <col style="width:88px;">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Date</th><th>Transactions</th><th>Details</th>
+        <th class="r">Amount</th><th class="r">Payments</th><th class="r">Balance</th>
+      </tr>
+    </thead>
+    <tbody>{rows}</tbody>
+  </table>
+
+  <!-- Balance Due banner -->
+  <table class="bal-banner" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+    <tr>
+      <td class="bb-lbl">{bal_label}</td>
+      <td class="bb-amt">{bal_amt}</td>
+    </tr>
+  </table>
+
+  {tnc}
+
+</div>""".format(
+        logo=logo_html,
+        company_name=company_doc.company_name,
+        co_addr=meta_line_fn(company_addr),
+        co_phone=meta_line_fn(company_doc.get("phone_no", "")),
+        co_email=meta_line_fn(company_doc.get("email", "")),
+        from_date=formatdate(filters.from_date),
+        to_date=formatdate(filters.to_date),
+        cust_code_line=(
+            '<div class="party-name">{}</div>'.format(cust_code_head)
+            if cust_code_head else ""
+        ),
+        cust_name=cust_name,
+        cust_mobile=meta_line_fn(customer_doc.get("custom_mobile_number") or ""),
+        cust_addr=meta_line_fn(customer_addr),
+        cust_gstin_line=meta_line_fn("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
+        open_bal=_fmt(opening_balance, currency),
+        inv_amt=_fmt(total_inv, currency),
+        rec_amt=_fmt(total_rec, currency),
+        bal_label=bal_label,
+        bal_amt=_fmt(abs(closing), currency),
+        bal_color=bal_color,
+        rows=rows_html,
+        tnc=_build_tnc_html(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # PDF export  (called from the "Export Ledger" button via whitelisted API)
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def download_customer_ledger_pdf(filters, include_ar=0):
+def download_customer_ledger_pdf(filters, include_ar=0, include_ledger=1):
     from frappe.utils.pdf import get_pdf
 
     if isinstance(filters, str):
         filters = frappe._dict(json.loads(filters))
     else:
         filters = frappe._dict(filters or {})
-    include_ar = cint(include_ar)
+    include_ar      = cint(include_ar)
+    include_ledger  = cint(include_ledger)
 
     _validate_filters(filters)
 
@@ -391,189 +581,33 @@ def download_customer_ledger_pdf(filters, include_ar=0):
     # ── Company GSTIN
     co_gstin = company_doc.get("tax_id") or ""
 
-    html = """<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; }}
-  .page {{ padding: 14px 18px; }}
-  /* ── Accent bar ── */
-  .accent-bar {{ height: 5px; background: #1d3969; margin: -14px -18px 0; }}
-  /* ── Header area ── */
-  .hdr-area {{ background: #eef1f8; margin: 0 -18px; padding: 11px 18px 10px; }}
-  .co-name {{ font-size: 14px; font-weight: bold; color: #1d3969; margin-bottom: 3px; }}
-  .co-meta {{ font-size: 10px; color: #555; line-height: 1.7; }}
-  .stmt-title {{ font-size: 17px; font-weight: bold; text-align: right; color: #1d3969; }}
-  .stmt-period {{ font-size: 10px; color: #666; text-align: right; margin-top: 3px; }}
-  /* ── Divider ── */
-  .divider {{ border-top: 2px solid #1d3969; margin: 10px 0; }}
-  /* ── Summary cards ── */
-  .cards-tbl {{ width: 100%; border-collapse: separate; border-spacing: 5px 0; }}
-  .card {{ padding: 7px 8px; border: 1px solid #dde3ee; border-radius: 3px;
-           text-align: center; vertical-align: top; white-space: nowrap; }}
-  .card-lbl {{ font-size: 8.5px; color: #777; text-transform: uppercase;
-               letter-spacing: 0.4px; display: block; margin-bottom: 4px; }}
-  .card-val {{ font-size: 12px; font-weight: bold; display: block; }}
-  /* ── Customer block ── */
-  .to-block {{ border-left: 3px solid #1d3969; padding-left: 10px; }}
-  .to-label {{ font-size: 8.5px; font-weight: bold; color: #1d3969;
-               text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }}
-  .cust-name {{ font-size: 13px; font-weight: bold; color: #1a1a1a; }}
-  .cust-meta {{ font-size: 10px; color: #555; line-height: 1.7; margin-top: 2px; }}
-  /* ── Balance banner ── */
-  .bal-banner {{ background: #f8f9fc; border-left: 4px solid {bal_color};
-                 padding: 7px 14px; margin: 10px 0; }}
-  .bal-banner td {{ vertical-align: middle; }}
-  .bal-banner .bb-lbl {{ font-size: 11px; color: #555; }}
-  .bal-banner .bb-amt {{ font-size: 15px; font-weight: bold;
-                         text-align: right; color: {bal_color}; }}
-  /* ── Ledger table ── */
-  table.ledger {{ width: 100%; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }}
-  table.ledger thead tr {{ background: #1d3969; color: #fff; }}
-  table.ledger thead th {{ padding: 6px 7px; text-align: left; font-weight: 600; overflow: hidden; }}
-  table.ledger thead th.r {{ text-align: right; }}
-  table.ledger tbody tr:nth-child(even) {{ background: #f4f6fb; }}
-  table.ledger tbody td {{ padding: 5px 7px; border-bottom: 1px solid #e5eaf3;
-                           vertical-align: top; overflow: hidden; word-wrap: break-word; }}
-  table.ledger tbody td.r {{ text-align: right; white-space: nowrap; }}
-  .bold-row td {{ font-weight: bold; background: #e3e8f3 !important;
-                  border-top: 1px solid #b8c4dc; }}
-</style>
-</head>
-<body>
-<div class="page">
+    # ── Build page divs then assemble into one HTML document ────────────
+    css       = _get_pdf_css(bal_color)
+    page_divs = []
 
-  <!-- ① Accent stripe -->
-  <div class="accent-bar"></div>
+    if include_ledger:
+        page_divs.append(
+            _build_ledger_page_div(
+                logo_html, company_doc, company_addr, customer_doc, customer_addr,
+                cust_gstin, filters, currency, rows_html,
+                opening_balance, total_inv, total_rec, closing,
+                bal_color, bal_label, _meta_line,
+            )
+        )
 
-  <!-- ② Header area with tinted background -->
-  <div class="hdr-area">
-    <table width="100%" cellpadding="0" cellspacing="0">
-      <tr>
-        <td width="55%" style="vertical-align:top;">
-          {logo}
-          <div class="co-name">{company_name}</div>
-          <div class="co-meta">
-            {co_addr}{co_phone}{co_email}
-          </div>
-        </td>
-        <td width="45%" style="vertical-align:top;">
-          <div class="stmt-title">Statement of Accounts</div>
-          <div class="stmt-period">{from_date} To {to_date}</div>
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <div class="divider"></div>
-
-  <!-- ③ Summary cards (left) + ⑤ Customer left-border block (right) -->
-  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
-    <tr>
-      <td width="58%" style="vertical-align:top; padding-right:14px;">
-        <table class="cards-tbl" cellpadding="0" cellspacing="0">
-          <tr>
-            <td class="card" style="border-top:3px solid #607d8b;">
-              <span class="card-lbl">Opening Balance</span>
-              <span class="card-val" style="color:#455a64;">{open_bal}</span>
-            </td>
-            <td class="card" style="border-top:3px solid #1a56db;">
-              <span class="card-lbl">Invoiced Amount</span>
-              <span class="card-val" style="color:#1a56db;">{inv_amt}</span>
-            </td>
-            <td class="card" style="border-top:3px solid #27ae60;">
-              <span class="card-lbl">Amount Received</span>
-              <span class="card-val" style="color:#27ae60;">{rec_amt}</span>
-            </td>
-            <td class="card" style="border-top:3px solid {bal_color};">
-              <span class="card-lbl">{bal_label}</span>
-              <span class="card-val" style="color:{bal_color};">{bal_amt}</span>
-            </td>
-          </tr>
-        </table>
-      </td>
-      <td width="42%" style="vertical-align:top;">
-        <div class="to-block">
-          <div class="to-label">To</div>
-          <div class="cust-name">{cust_name}</div>
-          <div class="cust-meta">{cust_code_line}{cust_addr}{cust_gstin_line}</div>
-        </div>
-      </td>
-    </tr>
-  </table>
-
-  <!-- Transaction Table -->
-  <table class="ledger">
-    <colgroup>
-      <col style="width:78px;">
-      <col style="width:108px;">
-      <col>
-      <col style="width:88px;">
-      <col style="width:88px;">
-      <col style="width:88px;">
-    </colgroup>
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Transactions</th>
-        <th>Details</th>
-        <th class="r">Amount</th>
-        <th class="r">Payments</th>
-        <th class="r">Balance</th>
-      </tr>
-    </thead>
-    <tbody>{rows}</tbody>
-  </table>
-
-  <!-- Balance Due summary banner (bottom) -->
-  <table class="bal-banner" width="100%" cellpadding="0" cellspacing="0"
-         style="margin-top:14px;">
-    <tr>
-      <td class="bb-lbl">{bal_label}</td>
-      <td class="bb-amt">{bal_amt}</td>
-    </tr>
-  </table>
-
-  {tnc}
-
-</div>
-</body>
-</html>""".format(
-        bal_color=bal_color,
-        logo=logo_html,
-        company_name=company_doc.company_name,
-        co_addr=_meta_line(company_addr),
-        co_phone=_meta_line(company_doc.get("phone_no", "")),
-        co_email=_meta_line(company_doc.get("email", "")),
-        from_date=formatdate(filters.from_date),
-        to_date=formatdate(filters.to_date),
-        cust_name=customer_doc.customer_name,
-        cust_code_line=_meta_line("Code: {}".format(customer_doc.name)
-                                   if customer_doc.name != customer_doc.customer_name else ""),
-        cust_addr=_meta_line(customer_addr),
-        cust_gstin_line=_meta_line("GSTIN: {}".format(cust_gstin) if cust_gstin else ""),
-        open_bal=_fmt(opening_balance, currency),
-        inv_amt=_fmt(total_inv, currency),
-        rec_amt=_fmt(total_rec, currency),
-        bal_label=bal_label,
-        bal_amt=_fmt(abs(closing), currency),
-        rows=rows_html,
-        tnc=_build_tnc_html(),
-    )
-
-    # ── Page 2: Accounts Receivable (only when requested) ──────────
     if include_ar:
         ar_entries = _get_ar_entries(filters)
         aging      = _build_ar_aging(ar_entries)
-        ar_page    = _build_ar_page(
+        ar_div     = _build_ar_page(
             ar_entries, aging, filters, currency,
             logo_html, company_doc, customer_doc,
             company_addr, customer_addr,
             _meta_line,
+            page_break=(include_ledger == 1),
         )
-        html = html.replace("</div>\n</body>", "</div>\n" + ar_page + "\n</body>")
+        page_divs.append(ar_div)
+
+    html = _make_html_doc(css, page_divs)
 
     import datetime
     generated_on = datetime.datetime.now().strftime("%-d %b %Y, %-I:%M %p")
@@ -591,7 +625,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         "footer-spacing": "3",
     })
 
-    prefix = "Statement" if include_ar else "Ledger"
+    prefix = "Statement" if (include_ar and include_ledger) else ("AR" if include_ar else "Ledger")
     fname = "{}_{}_{}_to_{}.pdf".format(
         prefix,
         customer_doc.customer_name.replace(" ", "_"),
@@ -607,7 +641,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def email_customer_ledger(filters, include_ar=0):
+def email_customer_ledger(filters, include_ar=0, include_ledger=1):
     """Build the same PDF as download_customer_ledger_pdf and send it to the
     customer's primary email address."""
     from frappe.utils.pdf import get_pdf
@@ -618,7 +652,8 @@ def email_customer_ledger(filters, include_ar=0):
     else:
         filters = frappe._dict(filters)
 
-    include_ar = int(include_ar)
+    include_ar     = int(include_ar)
+    include_ledger = int(include_ledger)
 
     # Resolve customer email
     customer_doc = frappe.get_doc("Customer", filters.customer)
@@ -652,7 +687,7 @@ def email_customer_ledger(filters, include_ar=0):
 
     # Build pdf via shared helper — invoke same logic but capture bytes
     # We piggy-back on frappe.local.response being set then read it back.
-    download_customer_ledger_pdf(filters, include_ar=include_ar)
+    download_customer_ledger_pdf(filters, include_ar=include_ar, include_ledger=include_ledger)
     pdf_bytes = frappe.local.response.filecontent
     fname     = frappe.local.response.filename
 
@@ -800,6 +835,7 @@ def _get_ar_entries(filters):
             si.name                                                      AS voucher_no,
             'Sales Invoice'                                              AS voucher_type,
             CASE WHEN si.is_return = 1 THEN 'Credit Note' ELSE '' END   AS voucher_subtype,
+            si.grand_total                                               AS invoiced_amount,
             si.outstanding_amount,
             DATEDIFF(%(to_date)s, si.posting_date)                       AS ageing_days
         FROM `tabSales Invoice` si
@@ -837,8 +873,9 @@ def _build_ar_aging(ar_entries):
 def _build_ar_page(ar_entries, aging, filters, currency,
                    logo_html, company_doc, customer_doc,
                    company_addr, customer_addr,
-                   meta_line_fn):
-    """Return the full HTML string for the AR page (page 2 of the PDF)."""
+                   meta_line_fn, page_break=False):
+    """Return the AR <div class='page'> fragment (no html/head/body tags).
+    page_break=True adds page-break-before:always for combined Ledger+AR docs."""
 
     # ── AR table rows ──────────────────────────────────────────────────────
     ar_rows_html = ""
@@ -944,9 +981,18 @@ def _build_ar_page(ar_entries, aging, filters, currency,
     # ── Terms & Conditions ─────────────────────────────────────────────────
     tnc_html = _build_tnc_html()
 
-    # ── Assemble the full AR page ──────────────────────────────────────────
+    # ── Pre-compute dynamic values ─────────────────────────────────────────
+    pb_style  = "page-break-before:always;" if page_break else ""
+    cust_code = customer_doc.name
+    cust_name = customer_doc.customer_name
+    cust_code_line = (
+        '<div class="party-name">{}</div>'.format(cust_code)
+        if cust_code != cust_name else ""
+    )
+
+    # ── Assemble the AR page div ───────────────────────────────────────────
     return """
-<div class="page" style="page-break-before:always;">
+<div class="page" style="{pb_style}">
 
   <!-- ① Accent stripe -->
   <div class="accent-bar"></div>
@@ -976,8 +1022,9 @@ def _build_ar_page(ar_entries, aging, filters, currency,
   <div style="margin-bottom:12px;">
     <div class="to-block">
       <div class="to-label">To</div>
-      <div class="cust-name">{cust_name}</div>
-      <div class="cust-meta">{cust_code_line}{cust_addr}{cust_gstin_line}</div>
+      {cust_code_line}
+      <div class="party-name">{cust_name}</div>
+      <div class="cust-meta">{cust_mobile}{cust_addr}{cust_gstin_line}</div>
     </div>
   </div>
 
@@ -1008,17 +1055,16 @@ def _build_ar_page(ar_entries, aging, filters, currency,
   {tnc_section}
 
 </div>""".format(
+        pb_style=pb_style,
         logo=logo_html,
         company_name=company_doc.company_name,
         co_addr=meta_line_fn(company_addr),
         co_phone=meta_line_fn(company_doc.get("phone_no", "")),
         co_email=meta_line_fn(company_doc.get("email", "")),
         to_date=formatdate(filters.to_date),
-        cust_name=customer_doc.customer_name,
-        cust_code_line=meta_line_fn(
-            "Code: {}".format(customer_doc.name)
-            if customer_doc.name != customer_doc.customer_name else ""
-        ),
+        cust_code_line=cust_code_line,
+        cust_name=cust_name,
+        cust_mobile=meta_line_fn(customer_doc.get("custom_mobile_number") or ""),
         cust_addr=meta_line_fn(customer_addr),
         cust_gstin_line=meta_line_fn("GSTIN: {}".format(customer_doc.get("tax_id")) if customer_doc.get("tax_id") else ""),
         ar_rows=ar_rows_html,

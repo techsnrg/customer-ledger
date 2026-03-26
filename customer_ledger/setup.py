@@ -4,11 +4,13 @@ import frappe
 def after_install():
     _ensure_module()
     _ensure_report()
+    _ensure_ar_report()
 
 
 def after_migrate():
     _ensure_module()
     _ensure_report()
+    _ensure_ar_report()
 
 
 def _ensure_module():
@@ -53,6 +55,36 @@ def _ensure_report():
             "report_name": "Customer Ledger Report",
             "report_type": "Script Report",
             "ref_doctype": "GL Entry",
+            "module": "Customer Ledger",
+            "is_standard": "Yes",
+            "disabled": 0,
+            "roles": [
+                {"role": "Accounts User"},
+                {"role": "Accounts Manager"},
+                {"role": "System Manager"},
+            ],
+        }
+    )
+    report.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+
+def _ensure_ar_report():
+    """Create or repair the Customer AR Report document."""
+    exists = frappe.db.exists("Report", "Customer AR Report")
+
+    if exists:
+        frappe.db.set_value("Report", "Customer AR Report", "module", "Customer Ledger")
+        frappe.db.set_value("Report", "Customer AR Report", "disabled", 0)
+        frappe.db.commit()
+        return
+
+    report = frappe.get_doc(
+        {
+            "doctype": "Report",
+            "report_name": "Customer AR Report",
+            "report_type": "Script Report",
+            "ref_doctype": "Sales Invoice",
             "module": "Customer Ledger",
             "is_standard": "Yes",
             "disabled": 0,
