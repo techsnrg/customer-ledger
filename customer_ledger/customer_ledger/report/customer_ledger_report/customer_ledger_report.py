@@ -289,14 +289,15 @@ def _build_summary_cards(filters, data):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def download_customer_ledger_pdf(filters, include_ar=0):
+def download_customer_ledger_pdf(filters, include_ar=0, include_ledger=1):
     from frappe.utils.pdf import get_pdf
 
     if isinstance(filters, str):
         filters = frappe._dict(json.loads(filters))
     else:
         filters = frappe._dict(filters or {})
-    include_ar = cint(include_ar)
+    include_ar      = cint(include_ar)
+    include_ledger  = cint(include_ledger)
 
     _validate_filters(filters)
 
@@ -382,7 +383,8 @@ def download_customer_ledger_pdf(filters, include_ar=0):
     # ── Company GSTIN
     co_gstin = company_doc.get("tax_id") or ""
 
-    html = """<!DOCTYPE html>
+    # ── Build ledger page (page 1) — skip when AR-only export ──────────
+    html = "" if not include_ledger else """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -568,7 +570,10 @@ def download_customer_ledger_pdf(filters, include_ar=0):
             company_addr, customer_addr,
             _meta_line,
         )
-        html = html.replace("</div>\n</body>", "</div>\n" + ar_page + "\n</body>")
+        if include_ledger:
+            html = html.replace("</div>\n</body>", "</div>\n" + ar_page + "\n</body>")
+        else:
+            html = ar_page
 
     import datetime
     generated_on = datetime.datetime.now().strftime("%-d %b %Y, %-I:%M %p")
@@ -586,7 +591,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
         "footer-spacing": "3",
     })
 
-    prefix = "Statement" if include_ar else "Ledger"
+    prefix = "Statement" if (include_ar and include_ledger) else ("AR" if include_ar else "Ledger")
     fname = "{}_{}_{}_to_{}.pdf".format(
         prefix,
         customer_doc.customer_name.replace(" ", "_"),
@@ -602,7 +607,7 @@ def download_customer_ledger_pdf(filters, include_ar=0):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def email_customer_ledger(filters, include_ar=0):
+def email_customer_ledger(filters, include_ar=0, include_ledger=1):
     """Build the same PDF as download_customer_ledger_pdf and send it to the
     customer's primary email address."""
     from frappe.utils.pdf import get_pdf
@@ -613,7 +618,8 @@ def email_customer_ledger(filters, include_ar=0):
     else:
         filters = frappe._dict(filters)
 
-    include_ar = int(include_ar)
+    include_ar     = int(include_ar)
+    include_ledger = int(include_ledger)
 
     # Resolve customer email
     customer_doc = frappe.get_doc("Customer", filters.customer)
@@ -647,7 +653,7 @@ def email_customer_ledger(filters, include_ar=0):
 
     # Build pdf via shared helper — invoke same logic but capture bytes
     # We piggy-back on frappe.local.response being set then read it back.
-    download_customer_ledger_pdf(filters, include_ar=include_ar)
+    download_customer_ledger_pdf(filters, include_ar=include_ar, include_ledger=include_ledger)
     pdf_bytes = frappe.local.response.filecontent
     fname     = frappe.local.response.filename
 

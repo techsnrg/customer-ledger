@@ -15,5 +15,13 @@ frappe.ui.form.on("Customer", {
 				to_date:    today,
 			});
 		});
+
+		frm.add_custom_button(__("Customer AR"), function () {
+			frappe.set_route("query-report", "Customer AR Report", {
+				customer:  frm.doc.name,
+				company:   frappe.defaults.get_default("company"),
+				to_date:   today,
+			});
+		});
 	},
 });
