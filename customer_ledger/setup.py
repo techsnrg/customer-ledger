@@ -7,6 +7,7 @@ def after_install():
     _ensure_ar_report()
     _ensure_supplier_ledger_report()
     _ensure_supplier_ap_report()
+    _ensure_payment_entry_report()
 
 
 def after_migrate():
@@ -15,6 +16,7 @@ def after_migrate():
     _ensure_ar_report()
     _ensure_supplier_ledger_report()
     _ensure_supplier_ap_report()
+    _ensure_payment_entry_report()
 
 
 def _ensure_module():
@@ -160,4 +162,33 @@ def _ensure_supplier_ap_report():
         }
     )
     report.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+
+def _ensure_payment_entry_report():
+    """Create or repair the Payment Entry Report document."""
+    exists = frappe.db.exists("Report", "Payment Entry Report")
+
+    if exists:
+        frappe.db.set_value("Report", "Payment Entry Report", "module", "Customer Ledger")
+        frappe.db.set_value("Report", "Payment Entry Report", "disabled", 0)
+        frappe.db.commit()
+        return
+
+    frappe.get_doc(
+        {
+            "doctype": "Report",
+            "report_name": "Payment Entry Report",
+            "report_type": "Script Report",
+            "ref_doctype": "Payment Entry",
+            "module": "Customer Ledger",
+            "is_standard": "Yes",
+            "disabled": 0,
+            "roles": [
+                {"role": "Accounts User"},
+                {"role": "Accounts Manager"},
+                {"role": "System Manager"},
+            ],
+        }
+    ).insert(ignore_permissions=True)
     frappe.db.commit()

@@ -1,0 +1,8 @@
+{
+  "doctype": "Report",
+  "report_name": "Payment Entry Report",
+  "report_type": "Script Report",
+  "ref_doctype": "Payment Entry",
+  "module": "Customer Ledger",
+  "is_standard": "Yes"
+}
