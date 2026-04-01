@@ -5,12 +5,16 @@ def after_install():
     _ensure_module()
     _ensure_report()
     _ensure_ar_report()
+    _ensure_supplier_ledger_report()
+    _ensure_supplier_ap_report()
 
 
 def after_migrate():
     _ensure_module()
     _ensure_report()
     _ensure_ar_report()
+    _ensure_supplier_ledger_report()
+    _ensure_supplier_ap_report()
 
 
 def _ensure_module():
@@ -85,6 +89,66 @@ def _ensure_ar_report():
             "report_name": "Customer AR Report",
             "report_type": "Script Report",
             "ref_doctype": "Sales Invoice",
+            "module": "Customer Ledger",
+            "is_standard": "Yes",
+            "disabled": 0,
+            "roles": [
+                {"role": "Accounts User"},
+                {"role": "Accounts Manager"},
+                {"role": "System Manager"},
+            ],
+        }
+    )
+    report.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+
+def _ensure_supplier_ledger_report():
+    """Create or repair the Supplier Ledger Report document."""
+    exists = frappe.db.exists("Report", "Supplier Ledger Report")
+
+    if exists:
+        frappe.db.set_value("Report", "Supplier Ledger Report", "module", "Customer Ledger")
+        frappe.db.set_value("Report", "Supplier Ledger Report", "disabled", 0)
+        frappe.db.commit()
+        return
+
+    report = frappe.get_doc(
+        {
+            "doctype": "Report",
+            "report_name": "Supplier Ledger Report",
+            "report_type": "Script Report",
+            "ref_doctype": "GL Entry",
+            "module": "Customer Ledger",
+            "is_standard": "Yes",
+            "disabled": 0,
+            "roles": [
+                {"role": "Accounts User"},
+                {"role": "Accounts Manager"},
+                {"role": "System Manager"},
+            ],
+        }
+    )
+    report.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+
+def _ensure_supplier_ap_report():
+    """Create or repair the Supplier AP Report document."""
+    exists = frappe.db.exists("Report", "Supplier AP Report")
+
+    if exists:
+        frappe.db.set_value("Report", "Supplier AP Report", "module", "Customer Ledger")
+        frappe.db.set_value("Report", "Supplier AP Report", "disabled", 0)
+        frappe.db.commit()
+        return
+
+    report = frappe.get_doc(
+        {
+            "doctype": "Report",
+            "report_name": "Supplier AP Report",
+            "report_type": "Script Report",
+            "ref_doctype": "Purchase Invoice",
             "module": "Customer Ledger",
             "is_standard": "Yes",
             "disabled": 0,

@@ -9,5 +9,6 @@ after_install = "customer_ledger.setup.after_install"
 after_migrate = "customer_ledger.setup.after_migrate"
 
 doctype_js = {
-    "Customer": "public/js/customer_ledger_button.js"
+    "Customer": "public/js/customer_ledger_button.js",
+    "Supplier": "public/js/supplier_ledger_button.js",
 }
