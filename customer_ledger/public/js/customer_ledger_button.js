@@ -5,7 +5,7 @@ frappe.ui.form.on("Customer", {
 		var parts  = today.split("-");
 		var y      = parseInt(parts[0]);
 		var m      = parseInt(parts[1]);
-		var fy_start = (m <= 3 ? y - 1 : y) + "-04-01";
+		var fy_start = "2025-04-01";
 
 		frm.add_custom_button(__("Customer Ledger"), function () {
 			frappe.set_route("query-report", "Customer Ledger Report", {
