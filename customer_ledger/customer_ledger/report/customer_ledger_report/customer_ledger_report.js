@@ -56,7 +56,7 @@ frappe.query_reports["Customer Ledger Report"] = {
 		},
 		{
 			fieldname: "include_journal_entries",
-			label: __("Include Journal Entries"),
+			label: __("Include Adjustment Entries"),
 			fieldtype: "Check",
 			default: 1,
 		},

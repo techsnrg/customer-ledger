@@ -131,7 +131,16 @@ def _get_gl_entries(filters):
     group_by_account = cint(filters.get("group_by_account",        0))
 
     cancelled_cond = "" if show_cancelled else "AND gle.is_cancelled = 0"
-    je_cond        = "" if include_je     else "AND gle.voucher_type != 'Journal Entry'"
+    # When unchecked: hide only Journal Entries whose custom_entry_type = 'Adjustment Entry'
+    je_cond = "" if include_je else (
+        "AND NOT ("
+        "  gle.voucher_type = 'Journal Entry'"
+        "  AND gle.voucher_no IN ("
+        "    SELECT name FROM `tabJournal Entry`"
+        "    WHERE custom_entry_type = 'Adjustment Entry'"
+        "  )"
+        ")"
+    )
     order_by       = (
         "gle.account ASC, gle.posting_date ASC, gle.voucher_no ASC"
         if group_by_account else
