@@ -144,7 +144,7 @@ def _get_gl_entries(filters):
             gle.posting_date, gle.account, gle.voucher_type,
             CASE
                 WHEN gle.voucher_type = 'Sales Invoice' AND MAX(si.is_return) = 1
-                THEN CONCAT('Credit Note', IF(MAX(IFNULL(si.custom_reason,'')) != '', CONCAT(' (', MAX(IFNULL(si.custom_reason,'')), ')'), ''))
+                THEN CONCAT('Credit Note', {si_reason_gl})
                 ELSE MAX(gle.voucher_subtype)
             END                                AS voucher_subtype,
             gle.voucher_no,
@@ -162,7 +162,13 @@ def _get_gl_entries(filters):
           {je_cond}
         GROUP BY gle.posting_date, gle.account, gle.voucher_type, gle.voucher_no
         ORDER BY {order_by}
-        """.format(cancelled_cond=cancelled_cond, je_cond=je_cond, order_by=order_by),
+        """.format(
+            cancelled_cond=cancelled_cond, je_cond=je_cond, order_by=order_by,
+            si_reason_gl=(
+                "IF(MAX(IFNULL(si.custom_reason,'')) != '', CONCAT(' (', MAX(IFNULL(si.custom_reason,'')), ')'), '')"
+                if frappe.db.has_column("Sales Invoice", "custom_reason") else "''"
+            ),
+        ),
         {"company": filters.company, "customer": filters.customer,
          "from_date": filters.from_date, "to_date": filters.to_date},
         as_dict=True,
@@ -832,7 +838,7 @@ def _get_ar_entries(filters):
             si.name                                                      AS voucher_no,
             'Sales Invoice'                                              AS voucher_type,
             CASE WHEN si.is_return = 1
-                 THEN CONCAT('Credit Note', IF(IFNULL(si.custom_reason,'') != '', CONCAT(' (', si.custom_reason, ')'), ''))
+                 THEN CONCAT('Credit Note', {si_reason})
                  ELSE 'Invoice'
             END AS voucher_subtype,
             si.grand_total                                               AS invoiced_amount,
@@ -845,7 +851,12 @@ def _get_ar_entries(filters):
           AND si.outstanding_amount != 0
           AND si.posting_date <= %(to_date)s
         ORDER BY si.posting_date ASC, si.name ASC
-        """,
+        """.format(
+            si_reason=(
+                "IF(IFNULL(si.custom_reason,'') != '', CONCAT(' (', si.custom_reason, ')'), '')"
+                if frappe.db.has_column("Sales Invoice", "custom_reason") else "''"
+            ),
+        ),
         {"company": filters.company, "customer": filters.customer, "to_date": filters.to_date},
         as_dict=True,
     )

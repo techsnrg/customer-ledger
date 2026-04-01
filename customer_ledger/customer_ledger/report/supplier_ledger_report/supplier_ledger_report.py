@@ -145,7 +145,7 @@ def _get_gl_entries(filters):
             gle.posting_date, gle.account, gle.voucher_type,
             CASE
                 WHEN gle.voucher_type = 'Purchase Invoice' AND MAX(pi.is_return) = 1
-                THEN CONCAT('Debit Note', IF(MAX(IFNULL(pi.custom_reason,'')) != '', CONCAT(' (', MAX(IFNULL(pi.custom_reason,'')), ')'), ''))
+                THEN CONCAT('Debit Note', {pi_reason_gl})
                 ELSE MAX(gle.voucher_subtype)
             END                                AS voucher_subtype,
             gle.voucher_no,
@@ -163,7 +163,13 @@ def _get_gl_entries(filters):
           {je_cond}
         GROUP BY gle.posting_date, gle.account, gle.voucher_type, gle.voucher_no
         ORDER BY {order_by}
-        """.format(cancelled_cond=cancelled_cond, je_cond=je_cond, order_by=order_by),
+        """.format(
+            cancelled_cond=cancelled_cond, je_cond=je_cond, order_by=order_by,
+            pi_reason_gl=(
+                "IF(MAX(IFNULL(pi.custom_reason,'')) != '', CONCAT(' (', MAX(IFNULL(pi.custom_reason,'')), ')'), '')"
+                if frappe.db.has_column("Purchase Invoice", "custom_reason") else "''"
+            ),
+        ),
         {"company": filters.company, "supplier": filters.supplier,
          "from_date": filters.from_date, "to_date": filters.to_date},
         as_dict=True,
@@ -441,7 +447,7 @@ def _get_ap_entries(filters):
             pi.name                                                      AS voucher_no,
             'Purchase Invoice'                                           AS voucher_type,
             CASE WHEN pi.is_return = 1
-                 THEN CONCAT('Debit Note', IF(IFNULL(pi.custom_reason,'') != '', CONCAT(' (', pi.custom_reason, ')'), ''))
+                 THEN CONCAT('Debit Note', {pi_reason})
                  ELSE 'Invoice'
             END AS voucher_subtype,
             pi.grand_total                                               AS invoiced_amount,
@@ -454,7 +460,12 @@ def _get_ap_entries(filters):
           AND pi.outstanding_amount != 0
           AND pi.posting_date <= %(to_date)s
         ORDER BY pi.posting_date ASC, pi.name ASC
-        """,
+        """.format(
+            pi_reason=(
+                "IF(IFNULL(pi.custom_reason,'') != '', CONCAT(' (', pi.custom_reason, ')'), '')"
+                if frappe.db.has_column("Purchase Invoice", "custom_reason") else "''"
+            ),
+        ),
         {"company": filters.company, "supplier": filters.supplier, "to_date": filters.to_date},
         as_dict=True,
     )
