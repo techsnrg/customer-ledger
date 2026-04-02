@@ -107,9 +107,11 @@ frappe.query_reports["Customer AR Report"] = {
 		report.page.add_inner_button(__("Email Ledger + AR"),   function () { _emailAr(1); }, __("Email AR"));
 
 		// ── Send WhatsApp loader ────────────────────────────────────────────
-		const updateWA = () => {
+		const updateWA = (retries = 5) => {
 			if (window.snrg_whatsapp && snrg_whatsapp.loadReportButtons) {
 				snrg_whatsapp.loadReportButtons(report, "Customer AR Report");
+			} else if (retries > 0) {
+				setTimeout(() => updateWA(retries - 1), 500);
 			}
 		};
 		setTimeout(() => {
