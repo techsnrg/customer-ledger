@@ -105,6 +105,20 @@ frappe.query_reports["Customer AR Report"] = {
 		// ── Email AR dropdown ───────────────────────────────────────────────
 		report.page.add_inner_button(__("Email AR"),            function () { _emailAr(0); }, __("Email AR"));
 		report.page.add_inner_button(__("Email Ledger + AR"),   function () { _emailAr(1); }, __("Email AR"));
+
+		// ── Send WhatsApp loader ────────────────────────────────────────────
+		const updateWA = () => {
+			if (window.snrg_whatsapp && snrg_whatsapp.loadReportButtons) {
+				snrg_whatsapp.loadReportButtons(report, "Customer AR Report");
+			}
+		};
+		setTimeout(() => {
+			const df = report.get_filter("customer");
+			if (df && df.$input) {
+				df.$input.on("change", () => setTimeout(updateWA, 300));
+			}
+			updateWA(); // trigger on setup!
+		}, 500);
 	},
 
 	formatter: function (value, row, column, data, default_formatter) {

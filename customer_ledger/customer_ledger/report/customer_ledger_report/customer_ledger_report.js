@@ -127,6 +127,20 @@ frappe.query_reports["Customer Ledger Report"] = {
 		// ── Email Ledger dropdown ───────────────────────────────────────────
 		report.page.add_inner_button(__("Email Ledger"),        function () { _emailLedger(0); }, __("Email Ledger"));
 		report.page.add_inner_button(__("Email Ledger + AR"),   function () { _emailLedger(1); }, __("Email Ledger"));
+
+		// ── Send WhatsApp loader ────────────────────────────────────────────
+		const updateWA = () => {
+			if (window.snrg_whatsapp && snrg_whatsapp.loadReportButtons) {
+				snrg_whatsapp.loadReportButtons(report, "Customer Ledger Report");
+			}
+		};
+		setTimeout(() => {
+			const df = report.get_filter("customer");
+			if (df && df.$input) {
+				df.$input.on("change", () => setTimeout(updateWA, 300));
+			}
+			updateWA(); // trigger on setup!
+		}, 500);
 	},
 
 	formatter: function (value, row, column, data, default_formatter) {
