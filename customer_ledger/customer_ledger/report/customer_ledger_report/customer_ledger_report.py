@@ -129,10 +129,11 @@ def _get_gl_entries(filters):
     show_cancelled   = cint(filters.get("show_cancelled",         0))
     include_je       = cint(filters.get("include_journal_entries", 0))
     group_by_account = cint(filters.get("group_by_account",        0))
+    has_custom_entry_type = frappe.db.has_column("Journal Entry", "custom_entry_type")
 
     cancelled_cond = "" if show_cancelled else "AND gle.is_cancelled = 0"
     # When unchecked: hide only Journal Entries whose custom_entry_type = 'Adjustment Entry'
-    je_cond = "" if include_je else (
+    je_cond = "" if include_je or not has_custom_entry_type else (
         "AND NOT ("
         "  gle.voucher_type = 'Journal Entry'"
         "  AND gle.voucher_no IN ("
@@ -516,8 +517,8 @@ def download_customer_ledger_pdf(filters, include_ar=0, include_ledger=1):
     customer_doc    = frappe.get_doc("Customer", filters.customer)
     company_addr    = _get_company_address(filters.company)
     customer_addr   = _get_customer_address(filters.customer)
-    opening_balance = _get_opening_balance(filters)
-    gl_entries      = _get_gl_entries(filters)
+    opening_balance = _get_opening_balance(filters) if include_ledger else 0.0
+    gl_entries      = _get_gl_entries(filters) if include_ledger else []
 
     # Build transaction rows + running totals
     running   = opening_balance
