@@ -638,12 +638,16 @@ def download_customer_ledger_pdf(filters, include_ar=0, include_ledger=1):
         "footer-spacing": "3",
     })
 
-    prefix = "Statement" if (include_ar and include_ledger) else ("AR" if include_ar else "Ledger")
-    fname = "{}_{}_{}_to_{}.pdf".format(
-        prefix,
-        customer_doc.customer_name.replace(" ", "_"),
-        filters.from_date, filters.to_date,
-    )
+    customer_slug = customer_doc.customer_name.replace(" ", "_")
+    if include_ar and not include_ledger:
+        fname = "AR_{}_as_on_{}.pdf".format(customer_slug, filters.to_date)
+    else:
+        prefix = "Statement" if (include_ar and include_ledger) else "Ledger"
+        fname = "{}_{}_{}_to_{}.pdf".format(
+            prefix,
+            customer_slug,
+            filters.from_date, filters.to_date,
+        )
     frappe.local.response.filename    = fname
     frappe.local.response.filecontent = pdf
     frappe.local.response.type        = "pdf"
