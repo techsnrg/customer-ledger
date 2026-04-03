@@ -31,6 +31,18 @@ frappe.query_reports["Customer AR Report"] = {
 	],
 
 	onload: function (report) {
+		function _clearWhatsAppButtons() {
+			(report.__wa_button_entries || []).forEach(function (entry) {
+				report.page.remove_inner_button(entry.label, entry.group);
+			});
+			report.__wa_button_entries = [];
+		}
+
+		function _rememberWhatsAppButton(label, group) {
+			report.__wa_button_entries = report.__wa_button_entries || [];
+			report.__wa_button_entries.push({ label: label, group: group });
+		}
+
 		function _getFilters(action) {
 			var filters = report.get_filter_values();
 			if (!filters || !filters.customer) {
@@ -98,6 +110,59 @@ frappe.query_reports["Customer AR Report"] = {
 			});
 		}
 
+		function _loadWhatsAppButtons() {
+			var filters = _getFilters("sending WhatsApp");
+			_clearWhatsAppButtons();
+			if (!filters) return;
+
+			frappe.call({
+				method: "snrg_whatsapp.api.get_manual_whatsapp_recipients",
+				args: { customer: filters.customer },
+				callback: function (r) {
+					var recipients = (r.message && r.message.recipients) || [];
+					if (!recipients.length) return;
+
+					[
+						{ group: __("Send WhatsApp AR"), include_ar: 1, include_ledger: 0 },
+						{ group: __("Send WhatsApp Ledger + AR"), include_ar: 1, include_ledger: 1 },
+					].forEach(function (option) {
+						recipients.forEach(function (recipient) {
+							var label = recipient.button_label || recipient.label || recipient.mobile;
+							report.page.add_inner_button(label, function () {
+								if (!recipient.mobile) {
+									frappe.msgprint(__("No mobile number available. Please update the contact."));
+									return;
+								}
+
+								frappe.call({
+									method: "snrg_whatsapp.api.send_customer_report_whatsapp",
+									args: {
+										report_name: "Customer AR Report",
+										recipient_mobile: recipient.mobile,
+										recipient_label: label,
+										filters: JSON.stringify(filters),
+										include_ar: option.include_ar,
+										include_ledger: option.include_ledger,
+									},
+									freeze: true,
+									freeze_message: __("Sending WhatsApp…"),
+									callback: function (send_r) {
+										if (send_r.message) {
+											frappe.show_alert({
+												message: __(send_r.message.message),
+												indicator: "green",
+											});
+										}
+									},
+								});
+							}, option.group);
+							_rememberWhatsAppButton(label, option.group);
+						});
+					});
+				},
+			});
+		}
+
 		// ── Export AR dropdown ──────────────────────────────────────────────
 		report.page.add_inner_button(__("Export AR"),           function () { _exportPdf(0); }, __("Export AR"));
 		report.page.add_inner_button(__("Export Ledger + AR"),  function () { _exportPdf(1); }, __("Export AR"));
@@ -106,20 +171,12 @@ frappe.query_reports["Customer AR Report"] = {
 		report.page.add_inner_button(__("Email AR"),            function () { _emailAr(0); }, __("Email AR"));
 		report.page.add_inner_button(__("Email Ledger + AR"),   function () { _emailAr(1); }, __("Email AR"));
 
-		// ── Send WhatsApp loader ────────────────────────────────────────────
-		const updateWA = (retries = 5) => {
-			if (window.snrg_whatsapp && snrg_whatsapp.loadReportButtons) {
-				snrg_whatsapp.loadReportButtons(report, "Customer AR Report");
-			} else if (retries > 0) {
-				setTimeout(() => updateWA(retries - 1), 500);
-			}
-		};
 		setTimeout(() => {
 			const df = report.get_filter("customer");
 			if (df && df.$input) {
-				df.$input.on("change", () => setTimeout(updateWA, 300));
+				df.$input.on("change", () => setTimeout(_loadWhatsAppButtons, 300));
 			}
-			updateWA(); // trigger on setup!
+			_loadWhatsAppButtons();
 		}, 500);
 	},
 
