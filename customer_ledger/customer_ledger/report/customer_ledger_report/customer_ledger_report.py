@@ -642,7 +642,7 @@ def download_customer_ledger_pdf(filters, include_ar=0, include_ledger=1):
     if include_ar and not include_ledger:
         fname = "AR_{}_as_on_{}.pdf".format(customer_slug, filters.to_date)
     else:
-        prefix = "Statement" if (include_ar and include_ledger) else "Ledger"
+        prefix = "Statement_AR" if (include_ar and include_ledger) else "Ledger"
         fname = "{}_{}_{}_to_{}.pdf".format(
             prefix,
             customer_slug,
