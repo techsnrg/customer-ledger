@@ -31,6 +31,8 @@ frappe.query_reports["Customer AR Report"] = {
 	],
 
 	onload: function (report) {
+		var DEFAULT_LEDGER_FROM_DATE = "2025-04-01";
+
 		function _clearWhatsAppButtons() {
 			(report.__wa_button_entries || []).forEach(function (entry) {
 				report.page.remove_inner_button(entry.label, entry.group);
@@ -52,17 +54,19 @@ frappe.query_reports["Customer AR Report"] = {
 			return filters;
 		}
 
+		function _withLedgerDefaults(filters, include_ledger) {
+			var payload = Object.assign({}, filters);
+			if (!payload.to_date) payload.to_date = frappe.datetime.get_today();
+			if (include_ledger && !payload.from_date) {
+				payload.from_date = DEFAULT_LEDGER_FROM_DATE;
+			}
+			return payload;
+		}
+
 		function _exportPdf(include_ledger) {
 			var filters = _getFilters("exporting");
 			if (!filters) return;
-			// Ensure to_date is set; fall back to today
-			if (!filters.to_date) filters.to_date = frappe.datetime.get_today();
-			// For ledger+AR we need from_date — default to FY start
-			if (include_ledger && !filters.from_date) {
-				var parts = filters.to_date.split("-");
-				var y = parseInt(parts[0]), m = parseInt(parts[1]);
-				filters.from_date = (m <= 3 ? y - 1 : y) + "-04-01";
-			}
+			filters = _withLedgerDefaults(filters, include_ledger);
 			var url = frappe.urllib.get_full_url(
 				"/api/method/customer_ledger.customer_ledger.report" +
 				".customer_ledger_report.customer_ledger_report.download_customer_ledger_pdf?" +
@@ -78,12 +82,7 @@ frappe.query_reports["Customer AR Report"] = {
 		function _emailAr(include_ledger) {
 			var filters = _getFilters("emailing");
 			if (!filters) return;
-			if (!filters.to_date) filters.to_date = frappe.datetime.get_today();
-			if (include_ledger && !filters.from_date) {
-				var parts = filters.to_date.split("-");
-				var y = parseInt(parts[0]), m = parseInt(parts[1]);
-				filters.from_date = (m <= 3 ? y - 1 : y) + "-04-01";
-			}
+			filters = _withLedgerDefaults(filters, include_ledger);
 			var msg = include_ledger
 				? __("Send Ledger + AR statement to the customer's email address?")
 				: __("Send AR statement to the customer's email address?");
@@ -129,6 +128,7 @@ frappe.query_reports["Customer AR Report"] = {
 						recipients.forEach(function (recipient) {
 							var label = recipient.button_label || recipient.label || recipient.mobile;
 							report.page.add_inner_button(label, function () {
+								var payloadFilters = _withLedgerDefaults(filters, option.include_ledger);
 								if (!recipient.mobile) {
 									frappe.msgprint(__("No mobile number available. Please update the contact."));
 									return;
@@ -140,7 +140,7 @@ frappe.query_reports["Customer AR Report"] = {
 										report_name: "Customer AR Report",
 										recipient_mobile: recipient.mobile,
 										recipient_label: label,
-										filters: JSON.stringify(filters),
+										filters: JSON.stringify(payloadFilters),
 										include_ar: option.include_ar,
 										include_ledger: option.include_ledger,
 									},

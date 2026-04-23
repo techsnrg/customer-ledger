@@ -24,8 +24,7 @@ frappe.query_reports["Customer Ledger Report"] = {
 			fieldname: "from_date",
 			label: __("From Date"),
 			fieldtype: "Date",
-			// Default to 1 Apr of the current Indian financial year
-			// (FY runs Apr 1 – Mar 31, so if today is Jan-Mar use previous year)
+			// Ledger statements should always start from the fixed cutoff date.
 			default: "2025-04-01",
 			reqd: 1,
 		},

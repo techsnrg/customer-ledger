@@ -10,6 +10,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, fmt_money, formatdate, getdate, nowdate
 
+DEFAULT_LEDGER_FROM_DATE = "2025-04-01"
+
 
 # ---------------------------------------------------------------------------
 # Column definitions  (filters are defined in supplier_ledger_report.js)
@@ -40,6 +42,7 @@ def get_columns(filters):
 
 def execute(filters=None):
     filters = frappe._dict(filters or {})
+    _apply_default_filters(filters)
     _validate_filters(filters)
 
     columns     = get_columns(filters)
@@ -53,6 +56,15 @@ def execute(filters=None):
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
+def _apply_default_filters(filters, include_ledger=1):
+    if not filters.get("company"):
+        filters.company = frappe.defaults.get_user_default("company")
+    if not filters.get("to_date"):
+        filters.to_date = nowdate()
+    if cint(include_ledger) and not filters.get("from_date"):
+        filters.from_date = DEFAULT_LEDGER_FROM_DATE
+
 
 def _validate_filters(filters):
     if filters.from_date and filters.to_date:
@@ -862,6 +874,7 @@ def download_supplier_ledger_pdf(filters, include_ap=0, include_ledger=1):
     include_ap     = cint(include_ap)
     include_ledger = cint(include_ledger)
 
+    _apply_default_filters(filters, include_ledger=include_ledger)
     _validate_filters(filters)
 
     currency      = _get_currency(filters)
@@ -994,6 +1007,7 @@ def email_supplier_ledger(filters, include_ap=0, include_ledger=1):
 
     include_ap     = int(include_ap)
     include_ledger = int(include_ledger)
+    _apply_default_filters(filters, include_ledger=include_ledger)
 
     supplier_doc = frappe.get_doc("Supplier", filters.supplier)
     to_email = (
