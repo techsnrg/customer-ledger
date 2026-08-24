@@ -5,18 +5,20 @@ frappe.ui.form.on("Customer", {
 
 		frm.add_custom_button(__("Customer Ledger"), function () {
 			frappe.set_route("query-report", "Customer Ledger Report", {
-				customer:   frm.doc.name,
-				company:    frappe.defaults.get_default("company"),
-				from_date:  ledgerStartDate,
-				to_date:    today,
+				customer:      frm.doc.name,
+				customer_name: frm.doc.customer_name,
+				company:       frappe.defaults.get_default("company"),
+				from_date:     ledgerStartDate,
+				to_date:       today,
 			});
 		});
 
 		frm.add_custom_button(__("Customer AR"), function () {
 			frappe.set_route("query-report", "Customer AR Report", {
-				customer:  frm.doc.name,
-				company:   frappe.defaults.get_default("company"),
-				to_date:   today,
+				customer:      frm.doc.name,
+				customer_name: frm.doc.customer_name,
+				company:       frappe.defaults.get_default("company"),
+				to_date:       today,
 			});
 		});
 	},

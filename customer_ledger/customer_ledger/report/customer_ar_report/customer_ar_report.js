@@ -16,6 +16,12 @@ frappe.query_reports["Customer AR Report"] = {
 			reqd: 1,
 		},
 		{
+			fieldname: "customer_name",
+			label: __("Customer Name"),
+			fieldtype: "Data",
+			read_only: 1,
+		},
+		{
 			fieldname: "to_date",
 			label: __("As of Date"),
 			fieldtype: "Date",
@@ -32,6 +38,38 @@ frappe.query_reports["Customer AR Report"] = {
 
 	onload: function (report) {
 		var DEFAULT_LEDGER_FROM_DATE = "2025-04-01";
+
+		function _setCustomerName(name) {
+			var field = report.get_filter("customer_name");
+			if (!field) return;
+			field.value = name || "";
+			field.set_input(name || "");
+		}
+
+		function _syncCustomerName() {
+			var filters = report.get_filter_values();
+			var customer = filters && filters.customer;
+
+			if (!customer) {
+				_setCustomerName("");
+				return;
+			}
+
+			frappe.call({
+				method: "frappe.client.get_value",
+				args: {
+					doctype: "Customer",
+					filters: { name: customer },
+					fieldname: "customer_name",
+				},
+				callback: function (r) {
+					var currentFilters = report.get_filter_values() || {};
+					if (currentFilters.customer !== customer) return;
+					var customerName = r.message && r.message.customer_name;
+					_setCustomerName(customerName || "");
+				},
+			});
+		}
 
 		function _clearWhatsAppButtons() {
 			(report.__wa_button_entries || []).forEach(function (entry) {
@@ -174,8 +212,14 @@ frappe.query_reports["Customer AR Report"] = {
 		setTimeout(() => {
 			const df = report.get_filter("customer");
 			if (df && df.$input) {
-				df.$input.on("change", () => setTimeout(_loadWhatsAppButtons, 300));
+				df.$input.off("change.car_customer_meta").on("change.car_customer_meta", () => {
+					setTimeout(function () {
+						_syncCustomerName();
+						_loadWhatsAppButtons();
+					}, 300);
+				});
 			}
+			_syncCustomerName();
 			_loadWhatsAppButtons();
 		}, 500);
 	},
